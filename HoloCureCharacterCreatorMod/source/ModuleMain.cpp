@@ -71,7 +71,6 @@ EXPORTED AurieStatus ModuleInitialize(
 {
 	// TODO: Should add levels for buffs
 	// TODO: Probably should try to avoid loading the same image multiple times if it is used multiple times
-	// TODO: Probably should have some error checking to print out any JSON conversion errors instead of throwing an unhandled exception
 	// TODO: Add delete option for buffs
 	// TODO: Should probably improve the onTrigger selection to not need to default to none
 	AurieStatus status = AURIE_SUCCESS;
@@ -224,13 +223,17 @@ EXPORTED AurieStatus ModuleInitialize(
 	PVOID tempYYGMLPopContextStackPtr = nullptr;
 	status = FindMemoryPatternAddress(
 		UTEXT(
-			"\x8B\x05\x12\x28\xFF\x00"	// MOV EAX, dword ptr [DAT_1431445d8]
+			"\x8B\x05\x00\x00\x00\x00"	// MOV EAX, dword ptr [DAT_?]
 			"\x2B\xC1"					// SUB EAX, ECX
 			"\xB9\x00\x00\x00\x00"		// MOV ECX, 0x0
+			"\x0F\x48\xC1"				// CMOVS EAX, ECX
+			"\x89\x05\x00\x00\x00\x00"	// MOV dword ptr [DAT_?], EAX
 		),
-		"xxxxxx"
+		"xx????"
 		"xx"
-		"xxxxx",
+		"xxxxx"
+		"xxx"
+		"xx????",
 		tempYYGMLPopContextStackPtr
 	);
 	if (!AurieSuccess(status))

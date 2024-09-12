@@ -897,7 +897,6 @@ menuGrid buffMenuGrid({
 
 void initMenu()
 {
-	menuGrid nullptrMenuGrid;
 	characterCreatorMenuGrid.initMenuGrid();
 	loadCharacterMenuGrid.initMenuGrid();
 	characterDataMenuGrid.initMenuGrid();
@@ -943,8 +942,16 @@ bool loadCharacterData(std::string dirName, characterData& charData)
 	g_ModuleInterface->Print(CM_WHITE, "Loading %s", dirName.c_str());
 	std::ifstream inFile;
 	inFile.open("CharacterCreatorMod/" + dirName + "/charData.json");
-	nlohmann::json inputData = nlohmann::json::parse(inFile);
-	charData = inputData.template get<characterData>();
+	try
+	{
+		nlohmann::json inputData = nlohmann::json::parse(inFile);
+		charData = inputData.template get<characterData>();
+	}
+	catch (nlohmann::json::parse_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Parse Error: %s when parsing %s", e.what(), dirName.c_str());
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Parse Error: %s when parsing %s", e.what(), dirName.c_str());
+	}
 	
 	return true;
 }
@@ -1814,7 +1821,7 @@ std::string getSpriteFilePath(std::shared_ptr<menuData> dataPtr)
 void copySpriteToDestination(std::shared_ptr<menuData>& imagePtr, std::string destPath)
 {
 	std::string spriteFilePath = getSpriteFilePath(imagePtr);
-	if (spriteFilePath.compare(destPath) == 0)
+	if (spriteFilePath.empty() || spriteFilePath.compare(destPath) == 0)
 	{
 		return;
 	}
@@ -1995,6 +2002,168 @@ void exportCharacterClickButton()
 	outFile.close();
 }
 
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::string& outputStr)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputStr);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to string", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to string", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to string", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to string", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, JSONInt& outputJSONInt)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputJSONInt);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to JSONInt", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to JSONInt", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to JSONInt", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to JSONInt", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, JSONDouble& outputJSONDouble)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputJSONDouble);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to JSONDouble", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to JSONDouble", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to JSONDouble", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to JSONDouble", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<weaponLevelData>& outputWeaponLevelDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputWeaponLevelDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<skillData>& outputSkillDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputSkillDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to skillData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to skillData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to skillData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to skillData list", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<buffData>& outputBuffDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputBuffDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to buffData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to buffData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to buffData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to buffData list", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<skillLevelData>& outputSkillLevelDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputSkillLevelDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, onTriggerData& outputOnTriggerData)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputOnTriggerData);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to onTriggerData", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to onTriggerData", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to onTriggerData", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to onTriggerData", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<buffLevelData>& outputBuffLevelDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputBuffLevelDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
+	}
+}
+
 void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 {
 	outputJson = nlohmann::json{
@@ -2030,39 +2199,37 @@ void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 	};
 }
 
-// TODO: Should probably add some error checking on this stuff
-
 void from_json(const nlohmann::json& inputJson, characterData& outputCharData)
 {
-	inputJson.at("charName").get_to(outputCharData.charName);
-	inputJson.at("portraitFileName").get_to(outputCharData.portraitFileName);
-	inputJson.at("largePortraitFileName").get_to(outputCharData.largePortraitFileName);
-	inputJson.at("idleAnimationFPS").get_to(outputCharData.idleAnimationFPS);
-	inputJson.at("idleAnimationFileName").get_to(outputCharData.idleAnimationFileName);
-	inputJson.at("runAnimationFPS").get_to(outputCharData.runAnimationFPS);
-	inputJson.at("runAnimationFileName").get_to(outputCharData.runAnimationFileName);
-	inputJson.at("HP").get_to(outputCharData.hp);
-	inputJson.at("ATK").get_to(outputCharData.atk);
-	inputJson.at("SPD").get_to(outputCharData.spd);
-	inputJson.at("CRIT").get_to(outputCharData.crit);
-	inputJson.at("attackIconFileName").get_to(outputCharData.attackIconFileName);
-	inputJson.at("attackAwakenedIconFileName").get_to(outputCharData.attackAwakenedIconFileName);
-	inputJson.at("attackName").get_to(outputCharData.attackName);
-	inputJson.at("specialIconFileName").get_to(outputCharData.specialIconFileName);
-	inputJson.at("attackAnimationFPS").get_to(outputCharData.attackAnimationFPS);
-	inputJson.at("attackAnimationFileName").get_to(outputCharData.attackAnimationFileName);
-	inputJson.at("specialCooldown").get_to(outputCharData.specialCooldown);
-	inputJson.at("specialName").get_to(outputCharData.specialName);
-	inputJson.at("specialDescription").get_to(outputCharData.specialDescription);
-	inputJson.at("specialAnimationFPS").get_to(outputCharData.specialAnimationFPS);
-	inputJson.at("specialAnimationFileName").get_to(outputCharData.specialAnimationFileName);
-	inputJson.at("specialDamage").get_to(outputCharData.specialDamage);
-	inputJson.at("specialDuration").get_to(outputCharData.specialDuration);
-	inputJson.at("sizeGrade").get_to(outputCharData.sizeGrade);
-	inputJson.at("weaponType").get_to(outputCharData.mainWeaponWeaponType);
-	inputJson.at("levels").get_to(outputCharData.weaponLevelDataList);
-	inputJson.at("skills").get_to(outputCharData.skillDataList);
-	inputJson.at("buffs").get_to(outputCharData.buffDataList);
+	parseJSONToVar(inputJson, "charName", outputCharData.charName);
+	parseJSONToVar(inputJson, "portraitFileName", outputCharData.portraitFileName);
+	parseJSONToVar(inputJson, "largePortraitFileName", outputCharData.largePortraitFileName);
+	parseJSONToVar(inputJson, "idleAnimationFPS", outputCharData.idleAnimationFPS);
+	parseJSONToVar(inputJson, "idleAnimationFileName", outputCharData.idleAnimationFileName);
+	parseJSONToVar(inputJson, "runAnimationFPS", outputCharData.runAnimationFPS);
+	parseJSONToVar(inputJson, "runAnimationFileName", outputCharData.runAnimationFileName);
+	parseJSONToVar(inputJson, "HP", outputCharData.hp);
+	parseJSONToVar(inputJson, "ATK", outputCharData.atk);
+	parseJSONToVar(inputJson, "SPD", outputCharData.spd);
+	parseJSONToVar(inputJson, "CRIT", outputCharData.crit);
+	parseJSONToVar(inputJson, "attackIconFileName", outputCharData.attackIconFileName);
+	parseJSONToVar(inputJson, "attackAwakenedIconFileName", outputCharData.attackAwakenedIconFileName);
+	parseJSONToVar(inputJson, "attackName", outputCharData.attackName);
+	parseJSONToVar(inputJson, "specialIconFileName", outputCharData.specialIconFileName);
+	parseJSONToVar(inputJson, "attackAnimationFPS", outputCharData.attackAnimationFPS);
+	parseJSONToVar(inputJson, "attackAnimationFileName", outputCharData.attackAnimationFileName);
+	parseJSONToVar(inputJson, "specialCooldown", outputCharData.specialCooldown);
+	parseJSONToVar(inputJson, "specialName", outputCharData.specialName);
+	parseJSONToVar(inputJson, "specialDescription", outputCharData.specialDescription);
+	parseJSONToVar(inputJson, "specialAnimationFPS", outputCharData.specialAnimationFPS);
+	parseJSONToVar(inputJson, "specialAnimationFileName", outputCharData.specialAnimationFileName);
+	parseJSONToVar(inputJson, "specialDamage", outputCharData.specialDamage);
+	parseJSONToVar(inputJson, "specialDuration", outputCharData.specialDuration);
+	parseJSONToVar(inputJson, "sizeGrade", outputCharData.sizeGrade);
+	parseJSONToVar(inputJson, "weaponType", outputCharData.mainWeaponWeaponType);
+	parseJSONToVar(inputJson, "levels", outputCharData.weaponLevelDataList);
+	parseJSONToVar(inputJson, "skills", outputCharData.skillDataList);
+	parseJSONToVar(inputJson, "buffs", outputCharData.buffDataList);
 }
 
 void to_json(nlohmann::json& outputJson, const skillData& inputSkillData)
@@ -2076,9 +2243,9 @@ void to_json(nlohmann::json& outputJson, const skillData& inputSkillData)
 
 void from_json(const nlohmann::json& inputJson, skillData& outputSkillData)
 {
-	inputJson.at("levels").get_to(outputSkillData.skillLevelDataList);
-	inputJson.at("skillName").get_to(outputSkillData.skillName);
-	inputJson.at("skillIconFileName").get_to(outputSkillData.skillIconFileName);
+	parseJSONToVar(inputJson, "levels", outputSkillData.skillLevelDataList);
+	parseJSONToVar(inputJson, "skillName", outputSkillData.skillName);
+	parseJSONToVar(inputJson, "skillIconFileName", outputSkillData.skillIconFileName);
 }
 
 void to_json(nlohmann::json& outputJson, const skillLevelData& inputSkillLevelData)
@@ -2099,16 +2266,16 @@ void to_json(nlohmann::json& outputJson, const skillLevelData& inputSkillLevelDa
 
 void from_json(const nlohmann::json& inputJson, skillLevelData& outputSkillLevelData)
 {
-	outputSkillLevelData.skillDescription = inputJson["skillDescription"];
-	outputSkillLevelData.attackIncrement = inputJson["attackIncrement"];
-	outputSkillLevelData.critIncrement = inputJson["critIncrement"];
-	outputSkillLevelData.hasteIncrement = inputJson["hasteIncrement"];
-	outputSkillLevelData.speedIncrement = inputJson["speedIncrement"];
-	outputSkillLevelData.DRMultiplier = inputJson["DRMultiplier"];
-	outputSkillLevelData.healMultiplier = inputJson["healMultiplier"];
-	outputSkillLevelData.food = inputJson["food"];
-	outputSkillLevelData.weaponSize = inputJson["weaponSize"];
-	outputSkillLevelData.skillOnTriggerData = inputJson["skillOnTriggerData"];
+	parseJSONToVar(inputJson, "skillDescription", outputSkillLevelData.skillDescription);
+	parseJSONToVar(inputJson, "attackIncrement", outputSkillLevelData.attackIncrement);
+	parseJSONToVar(inputJson, "critIncrement", outputSkillLevelData.critIncrement);
+	parseJSONToVar(inputJson, "hasteIncrement", outputSkillLevelData.hasteIncrement);
+	parseJSONToVar(inputJson, "speedIncrement", outputSkillLevelData.speedIncrement);
+	parseJSONToVar(inputJson, "DRMultiplier", outputSkillLevelData.DRMultiplier);
+	parseJSONToVar(inputJson, "healMultiplier", outputSkillLevelData.healMultiplier);
+	parseJSONToVar(inputJson, "food", outputSkillLevelData.food);
+	parseJSONToVar(inputJson, "weaponSize", outputSkillLevelData.weaponSize);
+	parseJSONToVar(inputJson, "skillOnTriggerData", outputSkillLevelData.skillOnTriggerData);
 }
 
 void to_json(nlohmann::json& outputJson, const weaponLevelData& inputWeaponLevelData)
@@ -2129,16 +2296,16 @@ void to_json(nlohmann::json& outputJson, const weaponLevelData& inputWeaponLevel
 
 void from_json(const nlohmann::json& inputJson, weaponLevelData& outputWeaponLevelData)
 {
-	outputWeaponLevelData.attackDescription = inputJson["attackDescription"];
-	outputWeaponLevelData.attackTime = inputJson["attackTime"];
-	outputWeaponLevelData.attackCount = inputJson["attackCount"];
-	outputWeaponLevelData.attackDelay = inputJson["attackDelay"];
-	outputWeaponLevelData.damage = inputJson["damage"];
-	outputWeaponLevelData.duration = inputJson["duration"];
-	outputWeaponLevelData.hitCD = inputJson["hitCD"];
-	outputWeaponLevelData.hitLimit = inputJson["hitLimit"];
-	outputWeaponLevelData.range = inputJson["range"];
-	outputWeaponLevelData.speed = inputJson["speed"];
+	parseJSONToVar(inputJson, "attackDescription", outputWeaponLevelData.attackDescription);
+	parseJSONToVar(inputJson, "attackTime", outputWeaponLevelData.attackTime);
+	parseJSONToVar(inputJson, "attackCount", outputWeaponLevelData.attackCount);
+	parseJSONToVar(inputJson, "attackDelay", outputWeaponLevelData.attackDelay);
+	parseJSONToVar(inputJson, "damage", outputWeaponLevelData.damage);
+	parseJSONToVar(inputJson, "duration", outputWeaponLevelData.duration);
+	parseJSONToVar(inputJson, "hitCD", outputWeaponLevelData.hitCD);
+	parseJSONToVar(inputJson, "hitLimit", outputWeaponLevelData.hitLimit);
+	parseJSONToVar(inputJson, "range", outputWeaponLevelData.range);
+	parseJSONToVar(inputJson, "speed", outputWeaponLevelData.speed);
 }
 
 void to_json(nlohmann::json& outputJson, const buffLevelData& inputBuffLevelData)
@@ -2159,16 +2326,16 @@ void to_json(nlohmann::json& outputJson, const buffLevelData& inputBuffLevelData
 
 void from_json(const nlohmann::json& inputJson, buffLevelData& outputBuffLevelData)
 {
-	outputBuffLevelData.attackIncrement = inputJson["attackIncrement"];
-	outputBuffLevelData.critIncrement = inputJson["critIncrement"];
-	outputBuffLevelData.hasteIncrement = inputJson["hasteIncrement"];
-	outputBuffLevelData.speedIncrement = inputJson["speedIncrement"];
-	outputBuffLevelData.DRMultiplier = inputJson["DR"];
-	outputBuffLevelData.healMultiplier = inputJson["healMultiplier"];
-	outputBuffLevelData.food = inputJson["food"];
-	outputBuffLevelData.weaponSize = inputJson["weaponSize"];
-	outputBuffLevelData.maxStacks = inputJson["maxStacks"];
-	outputBuffLevelData.timer = inputJson["timer"];
+	parseJSONToVar(inputJson, "attackIncrement", outputBuffLevelData.attackIncrement);
+	parseJSONToVar(inputJson, "critIncrement", outputBuffLevelData.critIncrement);
+	parseJSONToVar(inputJson, "hasteIncrement", outputBuffLevelData.hasteIncrement);
+	parseJSONToVar(inputJson, "speedIncrement", outputBuffLevelData.speedIncrement);
+	parseJSONToVar(inputJson, "DR", outputBuffLevelData.DRMultiplier);
+	parseJSONToVar(inputJson, "healMultiplier", outputBuffLevelData.healMultiplier);
+	parseJSONToVar(inputJson, "food", outputBuffLevelData.food);
+	parseJSONToVar(inputJson, "weaponSize", outputBuffLevelData.weaponSize);
+	parseJSONToVar(inputJson, "maxStacks", outputBuffLevelData.maxStacks);
+	parseJSONToVar(inputJson, "timer", outputBuffLevelData.timer);
 }
 
 void to_json(nlohmann::json& outputJson, const buffData& inputBuffData)
@@ -2182,9 +2349,9 @@ void to_json(nlohmann::json& outputJson, const buffData& inputBuffData)
 
 void from_json(const nlohmann::json& inputJson, buffData& outputBuffData)
 {
-	outputBuffData.buffName = inputJson["buffName"];
-	outputBuffData.levels = inputJson["levels"];
-	outputBuffData.buffIconFileName = inputJson["buffIconFileName"];
+	parseJSONToVar(inputJson, "buffName", outputBuffData.buffName);
+	parseJSONToVar(inputJson, "levels", outputBuffData.levels);
+	parseJSONToVar(inputJson, "buffIconFileName", outputBuffData.buffIconFileName);
 }
 
 void to_json(nlohmann::json& outputJson, const onTriggerData& inputOnTriggerData)
@@ -2198,9 +2365,9 @@ void to_json(nlohmann::json& outputJson, const onTriggerData& inputOnTriggerData
 
 void from_json(const nlohmann::json& inputJson, onTriggerData& outputOnTriggerData)
 {
-	outputOnTriggerData.onTriggerType = inputJson["onTriggerType"];
-	outputOnTriggerData.buffName = inputJson["buffName"];
-	outputOnTriggerData.probability = inputJson["probability"];
+	parseJSONToVar(inputJson, "onTriggerType", outputOnTriggerData.onTriggerType);
+	parseJSONToVar(inputJson, "buffName", outputOnTriggerData.buffName);
+	parseJSONToVar(inputJson, "probability", outputOnTriggerData.probability);
 }
 
 void to_json(nlohmann::json& outputJson, const JSONDouble& inputJSONDoubleData)

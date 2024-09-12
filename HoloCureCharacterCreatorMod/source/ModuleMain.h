@@ -77,6 +77,8 @@
 	DO(selectingGen) \
 	DO(selectingChar) \
 	DO(selectedCharacter) \
+	DO(isMelee) \
+	DO(stayOnCreator) \
 
 #define MAKE_ENUM(VAR) GML_ ## VAR,
 enum VariableNames

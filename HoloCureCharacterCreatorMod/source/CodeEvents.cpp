@@ -78,7 +78,7 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 				curCharSpriteData.attackAwakenedIconPtr = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.attackAwakenedIconFileName, charData.attackAwakenedIconFileName, 1));
 				curCharSpriteData.attackAnimationPtr = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.attackAnimationFileName, charData.attackAnimationFileName, getSpriteNumFrames(charData.attackAnimationFileName)));;
 				curCharSpriteData.specialAnimationPtr = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.specialAnimationFileName, charData.specialAnimationFileName, getSpriteNumFrames(charData.specialAnimationFileName)));;
-				for (int i = 0; i < 3; i++)
+				for (int i = 0; i < charData.skillDataList.size(); i++)
 				{
 					curCharSpriteData.skillIconPtrList.push_back(std::shared_ptr<spriteData>(new spriteData(dirStr + charData.skillDataList[i].skillIconFileName, charData.skillDataList[i].skillIconFileName, 1)));
 					double skillIconWidth = g_ModuleInterface->CallBuiltin("sprite_get_width", { curCharSpriteData.skillIconPtrList[i]->spriteRValue}).m_Real;
@@ -141,7 +141,10 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 				g_RunnerInterface.StructAddRValue(&charDataStruct, "attackIcon", &curCharSpriteData.attackIconPtr->spriteRValue);
 				g_RunnerInterface.StructAddString(&charDataStruct, "attack", charData.attackName.c_str());
 				RValue attackDescArr = g_ModuleInterface->CallBuiltin("array_create", { 1 });
-				attackDescArr[0] = charData.weaponLevelDataList[0].attackDescription.c_str();
+				if (!charData.weaponLevelDataList.empty())
+				{
+					attackDescArr[0] = charData.weaponLevelDataList[0].attackDescription.c_str();
+				}
 				g_RunnerInterface.StructAddRValue(&charDataStruct, "attackDesc", &attackDescArr);
 				g_RunnerInterface.StructAddRValue(&charDataStruct, "specIcon", &curCharSpriteData.specialIconPtr->spriteRValue);
 
@@ -153,9 +156,12 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 
 				RValue perksStruct;
 				g_RunnerInterface.StructCreate(&perksStruct);
-				g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[0].skillName.c_str(), 0);
-				g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[1].skillName.c_str(), 0);
-				g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[2].skillName.c_str(), 0);
+				if (charData.skillDataList.size() >= 3)
+				{
+					g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[0].skillName.c_str(), 0);
+					g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[1].skillName.c_str(), 0);
+					g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[2].skillName.c_str(), 0);
+				}
 				g_RunnerInterface.StructAddRValue(&charDataStruct, "perks", &perksStruct);
 
 				g_RunnerInterface.StructAddDouble(&charDataStruct, "sizeGrade", charData.sizeGrade.value);
@@ -182,7 +188,7 @@ void CharSelectDrawBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue
 void CharSelectDrawAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
 {
 	RValue charSelected = g_ModuleInterface->CallBuiltin("variable_global_get", { "charSelected" });
-	if (static_cast<int>(lround(charSelected.m_Real)) != -1)
+	if (static_cast<int>(lround(charSelected.m_Real)) != -1 || charDataMap.empty())
 	{
 		return;
 	}
@@ -321,7 +327,9 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 		setInstanceVariable(config, GML_optionIcon, curCharSprite.attackIconPtr->spriteRValue);
 		if (charData.mainWeaponWeaponType.compare("Melee") == 0)
 		{
-
+			setInstanceVariable(config, GML_stayOnCreator, true);
+			setInstanceVariable(config, GML_isMelee, true);
+			setInstanceVariable(config, GML_faceCreatorDirection, true);
 		}
 		else if (charData.mainWeaponWeaponType.compare("Multishot") == 0)
 		{
