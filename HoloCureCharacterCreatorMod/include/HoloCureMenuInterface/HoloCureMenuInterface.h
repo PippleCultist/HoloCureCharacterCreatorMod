@@ -80,6 +80,20 @@ struct HoloCureMenuInterface : AurieInterfaceBase
 		IN const std::string& ModName,
 		OUT std::shared_ptr<menuGridData>& menuGridPtr
 	);
+
+	/*
+	* Disable action buttons
+	*/
+	virtual AurieStatus DisableActionButtons(
+		IN const std::string& ModName
+	);
+
+	/*
+	* Enable action buttons
+	*/
+	virtual AurieStatus EnableActionButtons(
+		IN const std::string& ModName
+	);
 };
 
 enum MenuDataType
@@ -90,7 +104,8 @@ enum MenuDataType
 	MENUDATATYPE_NumberField,
 	MENUDATATYPE_Image,
 	MENUDATATYPE_Text,
-	MENUDATATYPE_Selection
+	MENUDATATYPE_Selection,
+	MENUDATATYPE_TextOutline
 };
 
 using menuFunc = void (*)(void);
@@ -101,38 +116,13 @@ struct menuData
 	int yPos;
 	int width;
 	int height;
-	int fps;
-	std::string menuID;
-	std::string labelName;
-	std::string textField;
-	bool isVisible;
-	menuFunc clickMenuFunc;
-	menuFunc labelNameFunc;
 	MenuDataType menuDataType;
-	std::vector<std::string> selectionText;
-	std::shared_ptr<spriteData> curSprite;
-	int curSubImageIndex;
-	int curFrameCount;
-	int curSelectionTextIndex;
+	std::string labelName;
+	std::string menuID;
+	bool isVisible;
 
-	menuData(int xPos, int yPos, int width, int height, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc, MenuDataType menuDataType) :
-		xPos(xPos), yPos(yPos), width(width), height(height), menuID(menuID), labelName(labelName), isVisible(isVisible), defaultLabelName(labelName),
-		defaultIsVisible(isVisible), clickMenuFunc(clickMenuFunc), labelNameFunc(labelNameFunc), menuDataType(menuDataType), fps(0), curSubImageIndex(0), curFrameCount(-1), curSprite(nullptr),
-		curSelectionTextIndex(0)
-	{
-	}
-
-	menuData(int xPos, int yPos, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc, MenuDataType menuDataType, int fps) :
-		xPos(xPos), yPos(yPos), width(0), height(0), menuID(menuID), labelName(labelName), isVisible(isVisible), defaultLabelName(labelName),
-		defaultIsVisible(isVisible), clickMenuFunc(clickMenuFunc), labelNameFunc(labelNameFunc), menuDataType(menuDataType), fps(fps), curSubImageIndex(0), curFrameCount(-1), curSprite(nullptr),
-		curSelectionTextIndex(0)
-	{
-	}
-
-	menuData(int xPos, int yPos, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc, MenuDataType menuDataType, std::vector<std::string> selectionText) :
-		xPos(xPos), yPos(yPos), width(180), height(20), menuID(menuID), labelName(labelName), isVisible(isVisible), defaultLabelName(labelName),
-		defaultIsVisible(isVisible), clickMenuFunc(clickMenuFunc), labelNameFunc(labelNameFunc), menuDataType(menuDataType), fps(0), curSubImageIndex(0), curFrameCount(-1), curSprite(nullptr), selectionText(selectionText),
-		curSelectionTextIndex(0)
+	menuData(int xPos, int yPos, int width, int height, MenuDataType menuDataType, std::string labelName, std::string menuID, bool isVisible) :
+		xPos(xPos), yPos(yPos), width(width), height(height), menuDataType(menuDataType), labelName(labelName), menuID(menuID), isVisible(isVisible), defaultIsVisible(isVisible), defaultLabelName(labelName)
 	{
 	}
 
@@ -141,6 +131,96 @@ struct menuData
 private:
 	std::string defaultLabelName;
 	bool defaultIsVisible;
+};
+
+struct menuDataButton : menuData
+{
+	menuFunc clickMenuFunc;
+	menuFunc labelNameFunc;
+	menuDataButton(int xPos, int yPos, int width, int height, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc) :
+		menuData(xPos, yPos, width, height, MENUDATATYPE_Button, labelName, menuID, isVisible),
+		clickMenuFunc(clickMenuFunc), labelNameFunc(labelNameFunc)
+	{
+	}
+};
+
+struct menuDataTextBoxField : menuData
+{
+	std::string textField;
+	menuFunc clickMenuFunc;
+	menuFunc labelNameFunc;
+	menuDataTextBoxField(int xPos, int yPos, int width, int height, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc) :
+		menuData(xPos, yPos, width, height, MENUDATATYPE_TextBoxField, labelName, menuID, isVisible),
+		clickMenuFunc(clickMenuFunc), labelNameFunc(labelNameFunc)
+	{
+	}
+};
+
+struct menuDataNumberField : menuData
+{
+	std::string textField;
+	menuFunc clickMenuFunc;
+	menuFunc labelNameFunc;
+	menuDataNumberField(int xPos, int yPos, int width, int height, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc) :
+		menuData(xPos, yPos, width, height, MENUDATATYPE_NumberField, labelName, menuID, isVisible),
+		clickMenuFunc(clickMenuFunc), labelNameFunc(labelNameFunc)
+	{
+	}
+};
+
+struct menuDataImageField : menuData
+{
+	int fps;
+	std::shared_ptr<spriteData> curSprite;
+	int curSubImageIndex;
+	int curFrameCount;
+	menuDataImageField(int xPos, int yPos, int width, int height, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc, int fps) :
+		menuData(xPos, yPos, 0, 0, MENUDATATYPE_Image, labelName, menuID, isVisible),
+		fps(fps), curSubImageIndex(0), curFrameCount(-1), curSprite(nullptr)
+	{
+	}
+};
+
+struct menuDataText : menuData
+{
+	menuFunc labelNameFunc;
+	menuDataText(int xPos, int yPos, int width, int height, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc) :
+		menuData(xPos, yPos, width, height, MENUDATATYPE_Text, labelName, menuID, isVisible),
+		labelNameFunc(labelNameFunc)
+	{
+	}
+};
+
+struct menuDataSelection : menuData
+{
+	int curSelectionTextIndex;
+	std::vector<std::string> selectionText;
+	menuFunc clickMenuFunc;
+	menuFunc labelNameFunc;
+	menuDataSelection(int xPos, int yPos, int width, int height, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc, std::vector<std::string> selectionText) :
+		menuData(xPos, yPos, 180, 20, MENUDATATYPE_Selection, labelName, menuID, isVisible),
+		selectionText(selectionText), clickMenuFunc(clickMenuFunc), labelNameFunc(labelNameFunc), curSelectionTextIndex(0)
+	{
+	}
+};
+
+struct menuDataTextOutline : menuData
+{
+	int outlineWidth;
+	int outlineColor;
+	int numOutline;
+	int linePixelSeparation;
+	int pixelsBeforeLineBreak;
+	int textColor;
+	int alpha;
+	menuFunc labelNameFunc;
+	menuDataTextOutline(int xPos, int yPos, std::string menuID, std::string labelName, bool isVisible, menuFunc clickMenuFunc, menuFunc labelNameFunc,
+		int outlineWidth, int outlineColor, int numOutline, int linePixelSeparation, int pixelsBeforeLineBreak, int textColor, int alpha) :
+		menuData(xPos, yPos, 0, 0, MENUDATATYPE_TextOutline, labelName, menuID, isVisible),
+		labelNameFunc(labelNameFunc), outlineWidth(outlineWidth), outlineColor(outlineColor), numOutline(numOutline),
+		linePixelSeparation(linePixelSeparation), pixelsBeforeLineBreak(pixelsBeforeLineBreak), textColor(textColor), alpha(alpha)
+	{
+	}
 };
 
 class menuColumnData
@@ -182,18 +262,20 @@ public:
 	int curSelectedColumnIndex;
 	std::shared_ptr<menuGridData> prevMenu;
 	menuFunc onEnterFunc;
+	menuFunc onReturnFunc;
+	menuFunc drawFunc;
 
-	menuGridData() : curSelectedColumnIndex(0), defaultCurSelectedColumnIndex(0), prevMenu(nullptr), onEnterFunc(nullptr)
+	menuGridData() : curSelectedColumnIndex(0), defaultCurSelectedColumnIndex(0), prevMenu(nullptr), onEnterFunc(nullptr), onReturnFunc(nullptr), drawFunc(nullptr)
 	{
 	}
 
 	menuGridData(std::vector<std::shared_ptr<menuColumnData>> menuColumnsPtrList, int defaultCurSelectedColumnIndex, std::shared_ptr<menuGridData> prevMenu) :
-		menuColumnsPtrList(menuColumnsPtrList), curSelectedColumnIndex(defaultCurSelectedColumnIndex), defaultCurSelectedColumnIndex(defaultCurSelectedColumnIndex), prevMenu(prevMenu), onEnterFunc(nullptr)
+		menuColumnsPtrList(menuColumnsPtrList), curSelectedColumnIndex(defaultCurSelectedColumnIndex), defaultCurSelectedColumnIndex(defaultCurSelectedColumnIndex), prevMenu(prevMenu), onEnterFunc(nullptr), onReturnFunc(nullptr), drawFunc(nullptr)
 	{
 	}
 
-	menuGridData(std::vector<std::shared_ptr<menuColumnData>> menuColumnsPtrList, int defaultCurSelectedColumnIndex, std::shared_ptr<menuGridData> prevMenu, menuFunc onEnterFunc) :
-		menuColumnsPtrList(menuColumnsPtrList), curSelectedColumnIndex(defaultCurSelectedColumnIndex), defaultCurSelectedColumnIndex(defaultCurSelectedColumnIndex), prevMenu(prevMenu), onEnterFunc(onEnterFunc)
+	menuGridData(std::vector<std::shared_ptr<menuColumnData>> menuColumnsPtrList, int defaultCurSelectedColumnIndex, std::shared_ptr<menuGridData> prevMenu, menuFunc onEnterFunc, menuFunc onReturnFunc, menuFunc drawFunc) :
+		menuColumnsPtrList(menuColumnsPtrList), curSelectedColumnIndex(defaultCurSelectedColumnIndex), defaultCurSelectedColumnIndex(defaultCurSelectedColumnIndex), prevMenu(prevMenu), onEnterFunc(onEnterFunc), onReturnFunc(onReturnFunc), drawFunc(drawFunc)
 	{
 	}
 

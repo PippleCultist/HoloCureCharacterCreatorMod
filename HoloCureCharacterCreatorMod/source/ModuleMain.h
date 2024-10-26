@@ -3,7 +3,7 @@
 #include <YYToolkit/shared.hpp>
 #include <CallbackManager/CallbackManagerInterface.h>
 
-#define VERSION_NUM "v1.0.1"
+#define VERSION_NUM "v1.0.2"
 #define MODNAME "Holocure Character Creator Mod " VERSION_NUM
 
 #define SOME_ENUM(DO) \

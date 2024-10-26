@@ -545,14 +545,16 @@ RValue& onCriticalHit(CInstance* Self, CInstance* Other, RValue& ReturnValue, in
 {
 	RValue playerCharacter = *Args[0];
 	applyBuff(playerCharacter);
-	return *Args[3];
+	ReturnValue = *Args[3];
+	return ReturnValue;
 }
 
 RValue& onHeal(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[1];
 	applyBuff(playerCharacter);
-	return *Args[0];
+	ReturnValue = *Args[0];
+	return ReturnValue;
 }
 
 RValue& onKill(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
@@ -566,14 +568,16 @@ RValue& onTakeDamage(CInstance* Self, CInstance* Other, RValue& ReturnValue, int
 {
 	RValue playerCharacter = *Args[3];
 	applyBuff(playerCharacter);
-	return *Args[0];
+	ReturnValue = *Args[0];
+	return ReturnValue;
 }
 
 RValue& onDodge(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[3];
 	applyBuff(playerCharacter);
-	return *Args[0];
+	ReturnValue = *Args[0];
+	return ReturnValue;
 }
 
 void AttackControllerOther11After(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
