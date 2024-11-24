@@ -155,9 +155,9 @@ EXPORTED AurieStatus ModuleInitialize(
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
 
-	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterScriptFunctionCallback(MODNAME, "gml_Script_CanSubmitScore_gml_Object_obj_PlayerManager_Create_0", CanSubmitScoreFuncBefore, nullptr, &origCanSubmitScoreScript)))
+	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterScriptFunctionCallback(MODNAME, "gml_Script_CanSubmitScore@gml_Object_obj_PlayerManager_Create_0", CanSubmitScoreFuncBefore, nullptr, &origCanSubmitScoreScript)))
 	{
-		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Script_CanSubmitScore_gml_Object_obj_PlayerManager_Create_0");
+		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Script_CanSubmitScore@gml_Object_obj_PlayerManager_Create_0");
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
 
@@ -166,13 +166,13 @@ EXPORTED AurieStatus ModuleInitialize(
 		UTEXT(
 			"\x40\x53"						// PUSH RBX
 			"\x48\x83\xEC\x30"				// SUB RSP, 0x30
-			"\x80\x3D\x26\x63\xE8\x00\x00"	// CMP byte ptr [DAT_142fd81a3], 0x0
+			"\x80\x3D\x00\x00\x00\x00\x00"	// CMP byte ptr [DAT_?], 0x0
 			"\x48\x8B\xD9"					// MOV RBX, RCX
 			"\x0F\x84\x82\x00\x00\x00"		// JZ LAB_142151f08
 		),
 		"xx"
 		"xxxx"
-		"xxxxxxx"
+		"xx????x"
 		"xxx"
 		"xxxxxx",
 		tempPushContextStackPtr
@@ -189,25 +189,21 @@ EXPORTED AurieStatus ModuleInitialize(
 	status = FindMemoryPatternAddress(
 		UTEXT(
 			"\x48\x89\x5C\x24\x10"	// MOV qword ptr [RSP + local_res10], RBX
-			"\x48\x89\x6C\x24\x18"	// MOV qword ptr [RSP + local_res18], RBP
-			"\x48\x89\x74\x24\x20"	// MOV qword ptr [RSP + local_res20], RSI
-			"\x57"					// PUSH RDI
-			"\x41\x54"				// PUSH R12
-			"\x41\x55"				// PUSH R13
+			"\x48\x89\x74\x24\x18"	// MOV qword ptr [RSP + local_res18], RSI
+			"\x48\x89\x7C\x24\x20"	// MOV qword ptr [RSP + local_res20], RDI
 			"\x41\x56"				// PUSH R14
-			"\x41\x57"				// PUSH R15
 			"\x48\x83\xEC\x20"		// SUB RSP, 0x20
-			"\x49\x8B\xD8"			// MOV RBX, R8
+			"\x49\x8B\xF8"			// MOV RDI, R8
+			"\x48\x8B\xF2"			// MOV RSI, RDX
+			"\x4C\x8B\xF1"			// MOV R14, RCX
 		),
 		"xxxxx"
 		"xxxxx"
 		"xxxxx"
-		"x"
-		"xx"
-		"xx"
-		"xx"
 		"xx"
 		"xxxx"
+		"xxx"
+		"xxx"
 		"xxx",
 		tempYYGMLYYSetScriptRefPtr
 	);
