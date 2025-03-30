@@ -166,7 +166,7 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 
 				g_RunnerInterface.StructAddDouble(&charDataStruct, "sizeGrade", charData.sizeGrade.value);
 
-				g_ModuleInterface->CallBuiltin("ds_map_set", { characterDataMap, charData.charName, charDataStruct });
+				g_ModuleInterface->CallBuiltin("ds_map_set", { characterDataMap, charData.charName.c_str(), charDataStruct});
 				charNameList.push_back(charData.charName);
 				charSpriteMap[charData.charName] = curCharSpriteData;
 				charDataMap[charData.charName] = charData;
@@ -207,7 +207,7 @@ void CharSelectDrawAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*
 	g_ModuleInterface->GetBuiltin("mouse_y", nullptr, NULL_INDEX, mouseY);
 	if (mouseX.m_Real >= 20 && mouseX.m_Real <= 20 + boxWidth && mouseY.m_Real >= 166 && mouseY.m_Real <= 166 + boxHeight)
 	{
-		if (g_ModuleInterface->CallBuiltin("mouse_check_button_pressed", { 1 }).AsBool())
+		if (g_ModuleInterface->CallBuiltin("mouse_check_button_pressed", { 1 }).ToBoolean())
 		{
 			if (charSelectPage > 0)
 			{
@@ -222,7 +222,7 @@ void CharSelectDrawAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*
 	}
 	if (mouseX.m_Real >= 578 && mouseX.m_Real <= 578 + boxWidth && mouseY.m_Real >= 166 && mouseY.m_Real <= 166 + boxHeight)
 	{
-		if (g_ModuleInterface->CallBuiltin("mouse_check_button_pressed", { 1 }).AsBool())
+		if (g_ModuleInterface->CallBuiltin("mouse_check_button_pressed", { 1 }).ToBoolean())
 		{
 			if (charSelectPage < (charDataMap.size() - 1) / 40 + 1)
 			{
@@ -257,13 +257,13 @@ void CharSelectDrawAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*
 			for (int i = 0; i < 40 && i + (charSelectPage - 1) * 40 < charNameList.size(); i++)
 			{
 				std::string curCharName = charNameList[i + (charSelectPage - 1) * 40];
-				RValue curCharData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { characterDataMap, curCharName });
+				RValue curCharData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { characterDataMap, curCharName.c_str()});
 				g_ModuleInterface->CallBuiltin("array_push", { charListByGenArr[i / 10], curCharData });
 				g_ModuleInterface->CallBuiltin("array_push", { charInfoArr, curCharData });
 
 				RValue characterFollowings = g_ModuleInterface->CallBuiltin("variable_global_get", { "characterFollowings" });
 				RValue tempArr = g_ModuleInterface->CallBuiltin("array_create", { 2 });
-				tempArr[0] = curCharName;
+				tempArr[0] = curCharName.c_str();
 				tempArr[1] = 0;
 				g_ModuleInterface->CallBuiltin("array_push", { characterFollowings, tempArr });
 			}
@@ -304,7 +304,7 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 		RValue newAttack = g_ModuleInterface->CallBuiltin("variable_clone", { attack });
 		auto& charData = charDataPair.second;
 		auto& curCharSprite = charSpriteMap[charDataPair.first];
-		setInstanceVariable(newAttack, GML_attackID, charData.attackName);
+		setInstanceVariable(newAttack, GML_attackID, charData.attackName.c_str());
 		RValue config = getInstanceVariable(newAttack, GML_config);
 		setInstanceVariable(config, GML_sprite_index, curCharSprite.attackAnimationPtr->spriteRValue);
 		setJSONNumberToStruct(config, GML_attackTime, charData.weaponLevelDataList[0].attackTime);
@@ -316,14 +316,14 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 		setJSONNumberToStruct(config, GML_attackCount, charData.weaponLevelDataList[0].attackCount);
 		setJSONNumberToStruct(config, GML_attackDelay, charData.weaponLevelDataList[0].attackDelay);
 		setJSONNumberToStruct(config, GML_range, charData.weaponLevelDataList[0].range);
-		setInstanceVariable(config, GML_attackID, charData.attackName);
-		setInstanceVariable(config, GML_optionID, charData.attackName);
+		setInstanceVariable(config, GML_attackID, charData.attackName.c_str());
+		setInstanceVariable(config, GML_optionID, charData.attackName.c_str());
 		setInstanceVariable(config, GML_onCreate, RValue());
 		setInstanceVariable(config, GML_customDrawScriptBelow, RValue());
 		setInstanceVariable(config, GML_collides, true);
 		setInstanceVariable(config, GML_isMain, true);
 		setInstanceVariable(config, GML_maxLevel, 7);
-		setInstanceVariable(config, GML_weaponType, charData.mainWeaponWeaponType);
+		setInstanceVariable(config, GML_weaponType, charData.mainWeaponWeaponType.c_str());
 		setInstanceVariable(config, GML_optionIcon, curCharSprite.attackIconPtr->spriteRValue);
 		if (charData.mainWeaponWeaponType.compare("Melee") == 0)
 		{
@@ -346,8 +346,8 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 			g_RunnerInterface.StructCreate(&curStruct);
 			RValue tempConfig;
 			g_RunnerInterface.StructCreate(&tempConfig);
-			setInstanceVariable(tempConfig, GML_optionName, std::format("{} LV {}", charData.attackName, j + 1));
-			setInstanceVariable(tempConfig, GML_optionDescription, charData.weaponLevelDataList[j].attackDescription);
+			setInstanceVariable(tempConfig, GML_optionName, std::format("{} LV {}", charData.attackName, j + 1).c_str());
+			setInstanceVariable(tempConfig, GML_optionDescription, charData.weaponLevelDataList[j].attackDescription.c_str());
 			setJSONNumberToStruct(tempConfig, GML_attackTime, charData.weaponLevelDataList[j].attackTime);
 			setJSONNumberToStruct(tempConfig, GML_duration, charData.weaponLevelDataList[j].duration);
 			setJSONNumberToStruct(tempConfig, GML_damage, charData.weaponLevelDataList[j].damage);
@@ -367,10 +367,10 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 		setInstanceVariable(config, GML_levels, levels);
 
 		RValue newSpecial = g_ModuleInterface->CallBuiltin("variable_clone", { attack });
-		setInstanceVariable(newSpecial, GML_attackID, charData.specialName);
+		setInstanceVariable(newSpecial, GML_attackID, charData.specialName.c_str());
 		RValue specialConfig = getInstanceVariable(newSpecial, GML_config);
-		setInstanceVariable(specialConfig, GML_attackID, charData.specialName);
-		setInstanceVariable(specialConfig, GML_optionID, charData.specialName);
+		setInstanceVariable(specialConfig, GML_attackID, charData.specialName.c_str());
+		setInstanceVariable(specialConfig, GML_optionID, charData.specialName.c_str());
 		setInstanceVariable(specialConfig, GML_sprite_index, curCharSprite.specialAnimationPtr->spriteRValue);
 		setInstanceVariable(specialConfig, GML_duration, charData.specialDuration.value);
 		setInstanceVariable(specialConfig, GML_damage, charData.specialDamage.value);
@@ -379,8 +379,8 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 		setInstanceVariable(specialConfig, GML_onCreate, RValue());
 		setInstanceVariable(specialConfig, GML_customDrawScriptBelow, RValue());
 
-		g_ModuleInterface->CallBuiltin("ds_map_set", { attackIndexMap, charData.attackName, newAttack });
-		g_ModuleInterface->CallBuiltin("ds_map_set", { attackIndexMap, charData.specialName, newSpecial });
+		g_ModuleInterface->CallBuiltin("ds_map_set", { attackIndexMap, charData.attackName.c_str(), newAttack});
+		g_ModuleInterface->CallBuiltin("ds_map_set", { attackIndexMap, charData.specialName.c_str(), newSpecial});
 	}
 }
 
@@ -391,11 +391,11 @@ RValue& buffApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int nu
 	RValue playerCharacter = *Args[0];
 	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
 	RValue stacks = getInstanceVariable(buffConfig, GML_stacks);
-	auto& charData = charDataMap[std::string(playerCharName.AsString())];
+	auto& charData = charDataMap[playerCharName.ToString()];
 
 	for (auto& buffData : charData.buffDataList)
 	{
-		if (buffName.AsString().compare(buffData.buffName) == 0)
+		if (buffName.ToString().compare(buffData.buffName) == 0)
 		{
 			if (buffData.levels[0].attackIncrement.isDefined)
 			{
@@ -443,11 +443,11 @@ RValue& buffRemove(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 	RValue playerCharacter = *Args[0];
 	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
 	RValue stacks = getInstanceVariable(buffConfig, GML_stacks);
-	auto& charData = charDataMap[std::string(playerCharName.AsString())];
+	auto& charData = charDataMap[std::string(playerCharName.ToString())];
 
 	for (auto& buffData : charData.buffDataList)
 	{
-		if (buffName.AsString().compare(buffData.buffName) == 0)
+		if (buffName.ToString().compare(buffData.buffName) == 0)
 		{
 			if (buffData.levels[0].attackIncrement.isDefined)
 			{
@@ -490,15 +490,15 @@ RValue& buffRemove(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 void applyBuff(RValue& playerCharacter)
 {
 	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[std::string(playerCharName.AsString())];
+	auto& charData = charDataMap[playerCharName.ToString()];
 
 	for (auto& buffData : charData.buffDataList)
 	{
-		if (lastStructVarGetName.AsString().compare(buffData.buffName) == 0)
+		if (lastStructVarGetName.ToString().compare(buffData.buffName) == 0)
 		{
 			RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
 			RValue buffsMap = getInstanceVariable(attackController, GML_Buffs);
-			RValue buffsMapData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, buffData.buffName });
+			RValue buffsMapData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, buffData.buffName.c_str() });
 			RValue probability = getInstanceVariable(buffsMapData, GML_probability);
 			std::random_device rd;
 			std::default_random_engine generator(rd());
@@ -511,13 +511,13 @@ void applyBuff(RValue& playerCharacter)
 				setInstanceVariable(buffConfig, GML_reapply, true);
 				setInstanceVariable(buffConfig, GML_stacks, 1.0);
 				setInstanceVariable(buffConfig, GML_maxStacks, buffData.levels[0].maxStacks.value);
-				setInstanceVariable(buffConfig, GML_buffName, buffData.buffName);
+				setInstanceVariable(buffConfig, GML_buffName, buffData.buffName.c_str());
 				setInstanceVariable(buffConfig, GML_buffIcon, getInstanceVariable(buffsMapData, GML_buffIcon));
 				// TODO: Should probably replace this with something more efficient
 				RValue ApplyBuffMethod = getInstanceVariable(attackController, GML_ApplyBuff);
 				RValue ApplyBuffArr = g_ModuleInterface->CallBuiltin("array_create", { 4 });
 				ApplyBuffArr[0] = playerCharacter;
-				ApplyBuffArr[1] = buffData.buffName;
+				ApplyBuffArr[1] = buffData.buffName.c_str();
 				ApplyBuffArr[2] = buffsMapData;
 				ApplyBuffArr[3] = buffConfig;
 				g_ModuleInterface->CallBuiltin("method_call", { ApplyBuffMethod, ApplyBuffArr });
@@ -601,7 +601,7 @@ void AttackControllerOther11After(std::tuple<CInstance*, CInstance*, CCode*, int
 			yyGMLPopContextStack(1);
 			setInstanceVariable(buffStruct, GML_Callback, retVal);
 			setInstanceVariable(buffStruct, GML_buffIcon, charSpriteMap[charDataPair.first].buffIconPtrMap[buffData.buffName]->spriteRValue);
-			g_ModuleInterface->CallBuiltin("ds_map_set", { buffsMap, buffData.buffName, buffStruct });
+			g_ModuleInterface->CallBuiltin("ds_map_set", { buffsMap, buffData.buffName.c_str(), buffStruct});
 		}
 	}
 }
@@ -615,7 +615,7 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 	RValue playerCharName = getInstanceVariable(Self, GML_charName);
 	RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
 	RValue buffsMap = getInstanceVariable(attackController, GML_Buffs);
-	auto& charData = charDataMap[std::string(playerCharName.AsString())];
+	auto& charData = charDataMap[std::string(playerCharName.ToString())];
 	auto& curSkillLevelData = charData.skillDataList[curSkillIndex].skillLevelDataList[curSkillLevel];
 	if (curSkillLevelData.attackIncrement.isDefined)
 	{
@@ -657,7 +657,7 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 		{
 			if (buffName.compare(buffData.buffName) == 0)
 			{
-				RValue onTriggerStruct = g_ModuleInterface->CallBuiltin("variable_instance_get", { playerCharacter, onTriggerData.onTriggerType });
+				RValue onTriggerStruct = g_ModuleInterface->CallBuiltin("variable_instance_get", { playerCharacter, onTriggerData.onTriggerType.c_str() });
 				RValue retVal;
 				yyGMLPushContextStack(Self);
 
@@ -697,9 +697,9 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 				}
 
 				yyGMLPopContextStack(1);
-				g_ModuleInterface->CallBuiltin("variable_instance_set", { onTriggerStruct, onTriggerData.buffName, retVal });
+				g_ModuleInterface->CallBuiltin("variable_instance_set", { onTriggerStruct, onTriggerData.buffName.c_str(), retVal});
 
-				RValue buffsMapStruct = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, buffData.buffName });
+				RValue buffsMapStruct = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, buffData.buffName.c_str() });
 				setInstanceVariable(buffsMapStruct, GML_probability, static_cast<double>(onTriggerData.probability.value));
 
 				RValue buffConfig;
@@ -707,12 +707,12 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 				setInstanceVariable(buffConfig, GML_reapply, true);
 				setInstanceVariable(buffConfig, GML_stacks, 1.0);
 				setInstanceVariable(buffConfig, GML_maxStacks, buffData.levels[0].maxStacks.value);
-				setInstanceVariable(buffConfig, GML_buffName, buffData.buffName);
+				setInstanceVariable(buffConfig, GML_buffName, buffData.buffName.c_str());
 				setInstanceVariable(buffConfig, GML_buffIcon, getInstanceVariable(buffsMapStruct, GML_buffIcon));
 				// TODO: Should probably replace this with something more efficient
 				RValue UpdateBuffIfExistsMethod = getInstanceVariable(Self, GML_UpdateBuffIfExists);
 				RValue UpdateBuffIfExistsArr = g_ModuleInterface->CallBuiltin("array_create", { 2 });
-				UpdateBuffIfExistsArr[0] = onTriggerData.buffName;
+				UpdateBuffIfExistsArr[0] = onTriggerData.buffName.c_str();
 				UpdateBuffIfExistsArr[1] = buffConfig;
 				g_ModuleInterface->CallBuiltin("method_call", { UpdateBuffIfExistsMethod, UpdateBuffIfExistsArr });
 				break;
@@ -802,12 +802,12 @@ void PlayerManagerOther22After(std::tuple<CInstance*, CInstance*, CCode*, int, R
 			RValue newPerk = g_ModuleInterface->CallBuiltin("variable_clone", { FPSMastery });
 			auto& skillData = charData.skillDataList[j];
 			
-			setInstanceVariable(newPerk, GML_id, skillData.skillName);
+			setInstanceVariable(newPerk, GML_id, skillData.skillName.c_str());
 			setInstanceVariable(newPerk, GML_optionIcon, charSpriteMap[charDataPair.first].skillIconPtrList[j]->spriteRValue);
-			setInstanceVariable(newPerk, GML_name, skillData.skillName);
-			setInstanceVariable(newPerk, GML_optionName, skillData.skillName);
-			setInstanceVariable(newPerk, GML_optionDescription, skillData.skillLevelDataList[0].skillDescription);
-			setInstanceVariable(newPerk, GML_optionID, skillData.skillName);
+			setInstanceVariable(newPerk, GML_name, skillData.skillName.c_str());
+			setInstanceVariable(newPerk, GML_optionName, skillData.skillName.c_str());
+			setInstanceVariable(newPerk, GML_optionDescription, skillData.skillLevelDataList[0].skillDescription.c_str());
+			setInstanceVariable(newPerk, GML_optionID, skillData.skillName.c_str());
 			
 			RValue descriptionArr = g_ModuleInterface->CallBuiltin("array_create", { 3 });
 			RValue skillOnApply = g_ModuleInterface->CallBuiltin("array_create", { 3 });
@@ -818,16 +818,16 @@ void PlayerManagerOther22After(std::tuple<CInstance*, CInstance*, CCode*, int, R
 				yyGMLYYSetScriptRef(&retVal, onApplyList[j * 3 + level], Self);
 				yyGMLPopContextStack(1);
 				skillOnApply[level] = retVal;
-				descriptionArr[level] = skillData.skillLevelDataList[level].skillDescription;
+				descriptionArr[level] = skillData.skillLevelDataList[level].skillDescription.c_str();
 			}
 			setInstanceVariable(newPerk, GML_OnApply, skillOnApply);
 
 			RValue descContainer;
 			g_RunnerInterface.StructCreate(&descContainer);
 			setInstanceVariable(descContainer, GML_selectedLanguage, descriptionArr);
-			g_ModuleInterface->CallBuiltin("variable_instance_set", { textContainer, skillData.skillName + "Description", descContainer });
+			g_ModuleInterface->CallBuiltin("variable_instance_set", { textContainer, std::string_view(skillData.skillName + "Description"), descContainer });
 
-			g_ModuleInterface->CallBuiltin("ds_map_set", { perksMap, skillData.skillName, newPerk });
+			g_ModuleInterface->CallBuiltin("ds_map_set", { perksMap, skillData.skillName.c_str(), newPerk});
 		}
 	}
 }

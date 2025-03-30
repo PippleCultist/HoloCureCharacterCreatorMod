@@ -1,5 +1,5 @@
 #include <Aurie/shared.hpp>
-#include <YYToolkit/shared.hpp>
+#include <YYToolkit/YYTK_Shared.hpp>
 #include "ScriptFunctions.h"
 #include "CommonFunctions.h"
 #include "CodeEvents.h"

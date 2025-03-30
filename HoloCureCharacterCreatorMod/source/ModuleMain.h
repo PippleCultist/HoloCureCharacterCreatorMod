@@ -1,9 +1,9 @@
 #pragma once
 #include <Aurie/shared.hpp>
-#include <YYToolkit/shared.hpp>
+#include <YYToolkit/YYTK_Shared.hpp>
 #include <CallbackManager/CallbackManagerInterface.h>
 
-#define VERSION_NUM "v1.0.3"
+#define VERSION_NUM "v1.0.4"
 #define MODNAME "Holocure Character Creator Mod " VERSION_NUM
 
 #define SOME_ENUM(DO) \

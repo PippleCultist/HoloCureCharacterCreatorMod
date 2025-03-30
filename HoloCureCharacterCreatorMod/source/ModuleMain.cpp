@@ -1,5 +1,5 @@
 #include <Aurie/shared.hpp>
-#include <YYToolkit/Shared.hpp>
+#include <YYToolkit/YYTK_Shared.hpp>
 #include "CodeEvents.h"
 #include "ScriptFunctions.h"
 #include "ModuleMain.h"
@@ -244,11 +244,11 @@ EXPORTED AurieStatus ModuleInitialize(
 	g_RunnerInterface = g_ModuleInterface->GetRunnerInterface();
 	g_ModuleInterface->GetGlobalInstance(&globalInstance);
 
-	objInputManagerIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "obj_InputManager" }).AsReal());
-	objAttackControllerIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "obj_AttackController" }).AsReal());
-	sprHudInitButtonsIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "hud_initButtons" }).AsReal());
-	sprRhythmButtonsIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "spr_rhythmButtons" }).AsReal());
-	jpFont = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "jpFont" }).AsReal());
+	objInputManagerIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "obj_InputManager" }).ToInt32());
+	objAttackControllerIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "obj_AttackController" }).ToInt32());
+	sprHudInitButtonsIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "hud_initButtons" }).ToInt32());
+	sprRhythmButtonsIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "spr_rhythmButtons" }).ToInt32());
+	jpFont = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "jpFont" }).ToInt32());
 
 	for (int i = 0; i < std::extent<decltype(VariableNamesStringsArr)>::value; i++)
 	{
