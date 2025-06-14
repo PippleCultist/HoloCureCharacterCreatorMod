@@ -16,7 +16,7 @@ To create a character, you can use the mod GUI or directly edit the `charData.js
 
 You will need a folder named `CharacterCreatorMod` in the directory `HoloCure.exe` is in. You can put the `char_test` folder in the `CharacterCreatorMod` directory, and the mod will automatically recognize it as long as the folder name starts with `char_`.
 
-When including new images, you will need to put them in `CharacterCreatorMod/inputData` for the mod to automatically recognize them.
+When including new images, you will need to put them in the character folder you made for the mod to automatically recognize them.
 
 In order to have Gamemaker recognize animations from a png, you will need to name it in the format `name_stripX.png` where `stripX` is the number of frames in the animation. The animation must be horizontally laid out in a strip for Gamemaker to automatically convert it correctly.
 Gamemaker will split the png into `X` equal images, so make sure to make each image of your animation with the same size and equally spaced apart.
