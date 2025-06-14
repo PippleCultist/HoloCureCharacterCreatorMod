@@ -19,6 +19,10 @@ struct buffData;
 struct onTriggerData;
 struct JSONDouble;
 struct JSONInt;
+struct actionProjectile;
+struct actionData;
+struct projectileActionData;
+struct projectileData;
 
 void to_json(nlohmann::json& outputJson, const characterData& inputCharData);
 void from_json(const nlohmann::json& inputJson, characterData& outputCharData);
@@ -38,6 +42,29 @@ void to_json(nlohmann::json& outputJson, const JSONDouble& inputJSONDoubleData);
 void from_json(const nlohmann::json& inputJson, JSONDouble& outputJSONDoubleData);
 void to_json(nlohmann::json& outputJson, const JSONInt& inputJSONIntData);
 void from_json(const nlohmann::json& inputJson, JSONInt& outputJSONIntData);
+void to_json(nlohmann::json& outputJson, const actionProjectile& inputActionProjectile);
+void from_json(const nlohmann::json& inputJson, actionProjectile& outputActionProjectile);
+void to_json(nlohmann::json& outputJson, const actionData& inputActionData);
+void from_json(const nlohmann::json& inputJson, actionData& outputActionData);
+void to_json(nlohmann::json& outputJson, const projectileActionData& inputProjectileActionData);
+void from_json(const nlohmann::json& inputJson, projectileActionData& outputProjectileActionData);
+void to_json(nlohmann::json& outputJson, const projectileData& inputProjectileData);
+void from_json(const nlohmann::json& inputJson, projectileData& outputProjectileData);
+
+class TextureData
+{
+public:
+	int width;
+	int height;
+	int numFrames;
+	double curFrame;
+	ID3D11ShaderResourceView* texture;
+	bool isAnimationPlaying;
+
+	TextureData() : width(0), height(0), numFrames(0), curFrame(0), texture(NULL), isAnimationPlaying(false)
+	{
+	}
+};
 
 struct JSONInt
 {
@@ -59,6 +86,27 @@ struct JSONDouble
 	}
 };
 
+enum projectileActionTriggerTypeEnum
+{
+	projectileActionTriggerType_NONE,
+	projectileActionTriggerType_OnDestroy,
+	projectileActionTriggerType_OnCreate,
+};
+
+static std::unordered_map<projectileActionTriggerTypeEnum, std::string> projectileActionTriggerTypeMap
+{
+	{ projectileActionTriggerType_NONE, "NONE" },
+	{ projectileActionTriggerType_OnDestroy, "OnDestroy" },
+	{ projectileActionTriggerType_OnCreate, "OnCreate" },
+};
+
+struct projectileActionData
+{
+	std::string projectileActionName;
+	projectileActionTriggerTypeEnum projectileActionTriggerType;
+	std::string triggeredActionName;
+};
+
 struct weaponLevelData
 {
 	std::string attackDescription;
@@ -71,6 +119,7 @@ struct weaponLevelData
 	JSONInt hitLimit;
 	JSONInt range;
 	JSONDouble speed;
+	std::vector<projectileActionData> projectileActionList;
 };
 
 struct onTriggerData
@@ -99,6 +148,15 @@ struct skillData
 	std::vector<skillLevelData> skillLevelDataList;
 	std::string skillName;
 	std::string skillIconFileName;
+	TextureData skillIconTextureData;
+
+	skillData()
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			skillLevelDataList.push_back(skillLevelData());
+		}
+	}
 };
 
 struct buffLevelData
@@ -120,6 +178,53 @@ struct buffData
 	std::string buffName;
 	std::vector<buffLevelData> levels;
 	std::string buffIconFileName;
+};
+
+struct actionProjectile
+{
+	JSONDouble relativeSpawnPosX;
+	JSONDouble relativeSpawnPosY;
+	JSONDouble spawnDir;
+	bool isAbsoluteSpawnDir;
+	std::string projectileDataName;
+};
+
+enum actionTypeEnum
+{
+	actionType_NONE,
+	actionType_SpawnProjectile,
+};
+
+static std::unordered_map<actionTypeEnum, std::string> actionTypeMap
+{
+	{ actionType_NONE, "NONE" },
+	{ actionType_SpawnProjectile, "SpawnProjectile" },
+};
+
+struct actionData
+{
+	std::string actionName;
+	actionTypeEnum actionType;
+//	std::vector<std::string> nextActionList;
+	actionProjectile actionProjectileData;
+};
+
+struct projectileData
+{
+	std::string projectileName;
+	JSONInt projectileAnimationFPS;
+	std::string projectileAnimationFileName;
+	JSONDouble projectileDamage;
+	JSONInt projectileDuration;
+	JSONInt projectileHitCD;
+	JSONInt projectileHitLimit;
+	JSONInt projectileHitRange;
+	JSONDouble projectileSpeed;
+	std::vector<projectileActionData> projectileActionList;
+	// TODO: Should add a isMain flag
+
+	std::string curSelectedProjectileAction;
+	TextureData projectileAnimationTextureData;
 };
 
 struct characterData
@@ -153,6 +258,8 @@ struct characterData
 	std::vector<weaponLevelData> weaponLevelDataList;
 	std::vector<skillData> skillDataList;
 	std::vector<buffData> buffDataList;
+	std::vector<actionData> actionDataList;
+	std::vector<projectileData> projectileDataList;
 
 	characterData()
 	{
@@ -162,6 +269,14 @@ struct characterData
 		runAnimationFPS.value = 12;
 		attackAnimationFPS.isDefined = true;
 		attackAnimationFPS.value = 30;
+		for (int i = 0; i < 3; i++)
+		{
+			skillDataList.push_back(skillData());
+		}
+		for (int i = 0; i < 7; i++)
+		{
+			weaponLevelDataList.push_back(weaponLevelData());
+		}
 	}
 };
 
@@ -230,49 +345,23 @@ struct buffDataMenuGrid
 	}
 };
 
+struct actionDataMenuGrid
+{
+	std::shared_ptr<menuGrid> actionDataGrid;
+
+	actionDataMenuGrid(std::shared_ptr<menuGrid> actionDataGrid) : actionDataGrid(actionDataGrid)
+	{
+	}
+};
+
 void initMenu();
+void handleImGUI();
 bool loadCharacterData(std::string dirName, characterData& charData);
 int getSpriteNumFrames(const std::string spritePathStr);
 
-void loadCharacterDataButton();
 void loadCharacterClickButton();
-void prevLoadCharacterButton();
-void nextLoadCharacterButton();
-void portraitClickButton();
-void prevIconButton();
-void nextIconButton();
-void clickIconButton();
-void clickSkillIconButton();
-void buffIconClickButton();
-void clickBuffMenuButton();
-void reloadBuffs();
-void prevBuffButton();
-void nextBuffButton();
-void addBuffMenuButton();
-void weaponLevelClickButton();
-void skillLevelClickButton();
-void skillMenuClickButton();
-void largePortraitClickButton();
-void idleAnimationClickButton();
-void runAnimationClickButton();
-void specialAnimationClickButton();
-void weaponLevelDescriptionClickButton();
-void skillDescriptionClickButton();
-void skillOnTriggerClickButton();
-void specialDescriptionClickButton();
-void skillIconMenuClickButton();
-void specialIconClickButton();
-void weaponIconClickButton();
-void weaponAwakenedIconClickButton();
-void weaponAnimationClickButton();
-void weaponLevelMenuClickButton();
-void characterDataClickButton();
-void mainWeaponClickButton();
-void skillClickButton();
-void specialClickButton();
-void buffClickButton();
-void exportCharacterClickButton();
-void prevImageButton();
-void nextImageButton();
-void playPauseButton();
-void animationFrameText();
+
+bool CreateDeviceD3D(HWND hWnd);
+void CleanupDeviceD3D();
+void CreateRenderTarget();
+void CleanupRenderTarget();

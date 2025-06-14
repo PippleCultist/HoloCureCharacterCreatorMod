@@ -1,9 +1,16 @@
+#pragma comment(lib, "d3d11.lib")
+
 #include "Menu.h"
 #include "ModuleMain.h"
 #include "CodeEvents.h"
 #include "CommonFunctions.h"
 #include "HoloCureMenuInterface/HoloCureMenuInterface.h"
 #include "nlohmann/json.hpp"
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_dx11.h"
+#include "imgui/imgui_impl_win32.h"
+#include "imgui/imgui_stdlib.h"
+#include <d3d11.h>
 #include <queue>
 #include <fstream>
 #include <regex>
@@ -21,907 +28,84 @@ int weaponLevelMenuIndex = -1;
 int skillMenuIndex = -1;
 int skillLevelMenuIndex = -1;
 int buffMenuIndex = -1;
+int actionMenuIndex = -1;
+int projectileMenuIndex = -1;
 
-std::shared_ptr<menuData> characterCreatorMenuLoadCharacter(new menuDataButton(60, 104 + 29 * 0, 180, 29, "CHARACTERCREATORMENU_LoadCharacter", "Load Character", true, loadCharacterClickButton, nullptr));
-std::shared_ptr<menuData> characterCreatorMenuCharacterData(new menuDataButton(60, 104 + 29 * 2, 180, 29, "CHARACTERCREATORMENU_CharacterData", "Character Data", true, characterDataClickButton, nullptr));
-std::shared_ptr<menuData> characterCreatorMenuWeaponData(new menuDataButton(60, 104 + 29 * 3, 180, 29, "CHARACTERCREATORMENU_WeaponData", "Weapon Data", true, mainWeaponClickButton, nullptr));
-std::shared_ptr<menuData> characterCreatorMenuSkillData(new menuDataButton(60, 104 + 29 * 4, 180, 29, "CHARACTERCREATORMENU_SkillData", "Skill Data", true, skillClickButton, nullptr));
-std::shared_ptr<menuData> characterCreatorMenuSpecialData(new menuDataButton(60, 104 + 29 * 5, 180, 29, "CHARACTERCREATORMENU_SpecialData", "Special Data", true, specialClickButton, nullptr));
-std::shared_ptr<menuData> characterCreatorMenuBuffData(new menuDataButton(60, 104 + 29 * 6, 180, 29, "CHARACTERCREATORMENU_BuffData", "Buff Data", true, buffClickButton, nullptr));
-std::shared_ptr<menuData> characterCreatorMenuExportCharacter(new menuDataButton(60, 104 + 29 * 7, 180, 29, "CHARACTERCREATORMENU_ExportCharacter", "Export Character", true, exportCharacterClickButton, nullptr));
+int curCharIdx = -1;
+int loadedCharIdx = -1;
+int curBuffDataIdx = -1;
+bool hasLoadedData = false;
+bool showAttackAnimationWindow = false;
+bool showBuffDataWindow = false;
+bool showIdleAnimationWindow = false;
+bool showRunAnimationWindow = false;
+bool showPortraitWindow = false;
+bool showLargePortraitWindow = false;
+bool showSpecialAnimationWindow = false;
+bool showWeaponLevelsWindow = false;
+bool showSkillDataWindow = false;
+bool showActionDataWindow = false;
+bool showProjectileDataWindow = false;
+bool isAttackAnimationPlaying = false;
+bool isIdleAnimationPlaying = false;
+bool isRunAnimationPlaying = false;
+bool isSpecialAnimationPlaying = false;
+
+int attackAnimationWidth = 0;
+int attackAnimationHeight = 0;
+int attackAnimationNumFrames = 0;
+double attackAnimationCurFrame = 0;
+ID3D11ShaderResourceView* attackAnimationTexture = NULL;
+
+int idleAnimationWidth = 0;
+int idleAnimationHeight = 0;
+int idleAnimationNumFrames = 0;
+double idleAnimationCurFrame = 0;
+ID3D11ShaderResourceView* idleAnimationTexture = NULL;
+
+int runAnimationWidth = 0;
+int runAnimationHeight = 0;
+int runAnimationNumFrames = 0;
+double runAnimationCurFrame = 0;
+ID3D11ShaderResourceView* runAnimationTexture = NULL;
+
+int buffIconWidth = 0;
+int buffIconHeight = 0;
+ID3D11ShaderResourceView* buffIconTexture = NULL;
+
+int portraitIconWidth = 0;
+int portraitIconHeight = 0;
+ID3D11ShaderResourceView* portraitIconTexture = NULL;
+
+int largePortraitIconWidth = 0;
+int largePortraitIconHeight = 0;
+ID3D11ShaderResourceView* largePortraitIconTexture = NULL;
+
+int specialAnimationWidth = 0;
+int specialAnimationHeight = 0;
+int specialAnimationNumFrames = 0;
+double specialAnimationCurFrame = 0;
+ID3D11ShaderResourceView* specialAnimationTexture = NULL;
+
+int specialIconWidth = 0;
+int specialIconHeight = 0;
+ID3D11ShaderResourceView* specialIconTexture = NULL;
+
+std::vector<std::string> charList;
+std::vector<std::string> imageList;
+characterData curCharData;
+
+std::shared_ptr<menuData> characterCreatorMenuLoadCharacter(new menuDataButton(60, 46 + 29 * 0, 180, 29, "CHARACTERCREATORMENU_LoadCharacter", "Load Character", true, loadCharacterClickButton, nullptr));
 
 menuGrid characterCreatorMenuGrid({
 	menuColumn({
 		characterCreatorMenuLoadCharacter,
-		characterCreatorMenuCharacterData,
-		characterCreatorMenuWeaponData,
-		characterCreatorMenuSkillData,
-		characterCreatorMenuSpecialData,
-		characterCreatorMenuBuffData,
-		characterCreatorMenuExportCharacter,
 	}),
 }, "Create Character", nullptr);
-
-std::shared_ptr<menuData> loadCharacterMenuButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton1", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton2", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton3", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton4", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton5", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton6", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton7", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "LOADCHARACTERMENU_LoadCharacterButton8", "", false, loadCharacterDataButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "LOADCHARACTERMENU_LoadCharacterPrevButton", "Prev", true, prevLoadCharacterButton, nullptr));
-std::shared_ptr<menuData> loadCharacterMenuNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "LOADCHARACTERMENU_LoadCharacterNextButton", "Next", true, nextLoadCharacterButton, nullptr));
-
-menuGrid loadCharacterMenuGrid({
-	menuColumn({
-		loadCharacterMenuButton1,
-		loadCharacterMenuButton2,
-		loadCharacterMenuButton3,
-		loadCharacterMenuButton4,
-		loadCharacterMenuButton5,
-		loadCharacterMenuButton6,
-		loadCharacterMenuButton7,
-		loadCharacterMenuButton8,
-		loadCharacterMenuPrevButton,
-		loadCharacterMenuNextButton,
-	}),
-}, "Load Character", &characterCreatorMenuGrid);
-
-std::shared_ptr<menuData> characterDataMenuCharName(new menuDataTextBoxField(60, 20 + 29 * 0, 130, 20, "CHARACTERDATAMENU_CharName", "charName", true, nullptr, nullptr));
-std::shared_ptr<menuData> characterDataMenuCharPortrait(new menuDataButton(60, 20 + 29 * 1, 180, 20, "CHARACTERDATAMENU_CharacterPortrait", "Portrait", true, portraitClickButton, nullptr));
-std::shared_ptr<menuData> characterDataMenuCharLargePortrait(new menuDataButton(60, 20 + 29 * 2, 180, 20, "CHARACTERDATAMENU_CharacterLargePortrait", "Large Portrait", true, largePortraitClickButton, nullptr));
-std::shared_ptr<menuData> characterDataMenuIdleAnimation(new menuDataButton(60, 20 + 29 * 3, 180, 20, "CHARACTERDATAMENU_IdleAnimation", "Idle Animation", true, idleAnimationClickButton, nullptr));
-std::shared_ptr<menuData> characterDataMenuRunAnimation(new menuDataButton(60, 20 + 29 * 4, 180, 20, "CHARACTERDATAMENU_RunAnimation", "Run Animation", true, runAnimationClickButton, nullptr));
-std::shared_ptr<menuData> characterDataMenuHP(new menuDataNumberField(60, 20 + 29 * 5, 130, 20, "CHARACTERDATAMENU_HP", "HP", true, nullptr, nullptr));
-std::shared_ptr<menuData> characterDataMenuATK(new menuDataNumberField(60, 20 + 29 * 6, 130, 20, "CHARACTERDATAMENU_ATK", "ATK", true, nullptr, nullptr));
-std::shared_ptr<menuData> characterDataMenuSPD(new menuDataNumberField(60, 20 + 29 * 7, 130, 20, "CHARACTERDATAMENU_SPD", "SPD", true, nullptr, nullptr));
-std::shared_ptr<menuData> characterDataMenuCrit(new menuDataNumberField(60, 20 + 29 * 8, 130, 20, "CHARACTERDATAMENU_Crit", "crit", true, nullptr, nullptr));
-std::shared_ptr<menuData> characterDataMenuSizeGrade(new menuDataNumberField(330, 20 + 29 * 0, 130, 20, "CHARACTERDATAMENU_SizeGrade", "Size Grade", true, nullptr, nullptr));
-
-menuGrid characterDataMenuGrid({
-	menuColumn({
-		characterDataMenuCharName,
-		characterDataMenuCharPortrait,
-		characterDataMenuCharLargePortrait,
-		characterDataMenuIdleAnimation,
-		characterDataMenuRunAnimation,
-		characterDataMenuHP,
-		characterDataMenuATK,
-		characterDataMenuSPD,
-		characterDataMenuCrit,
-	}),
-	menuColumn({
-		characterDataMenuSizeGrade,
-	}),
-}, "Character Data", &characterCreatorMenuGrid);
-
-std::shared_ptr<menuData> portraitMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "PORTRAITMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "PORTRAITMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "PORTRAITMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "PORTRAITMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "PORTRAITMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "PORTRAITMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "PORTRAITMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "PORTRAITMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "PORTRAITMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuIconNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "PORTRAITMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> portraitMenuPreviewImage(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "PORTRAITMENU_PreviewImage", "", true, nullptr, nullptr, 0));
-
-
-menuGrid portraitMenuGrid({
-	menuColumn({
-		portraitMenuIconButton1,
-		portraitMenuIconButton2,
-		portraitMenuIconButton3,
-		portraitMenuIconButton4,
-		portraitMenuIconButton5,
-		portraitMenuIconButton6,
-		portraitMenuIconButton7,
-		portraitMenuIconButton8,
-		portraitMenuIconPrevButton,
-		portraitMenuIconNextButton,
-	}),
-	menuColumn({
-		portraitMenuPreviewImage,
-	}),
-}, "Portrait", &characterDataMenuGrid);
-
-std::shared_ptr<menuData> largePortraitMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "LARGEPORTRAITMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "LARGEPORTRAITMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "LARGEPORTRAITMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "LARGEPORTRAITMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "LARGEPORTRAITMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "LARGEPORTRAITMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "LARGEPORTRAITMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "LARGEPORTRAITMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "LARGEPORTRAITMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "LARGEPORTRAITMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> largePortraitMenuPreviewImage(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "LARGEPORTRAITMENU_PreviewImage", "", true, nullptr, nullptr, 0));
-
-menuGrid largePortraitMenuGrid({
-	menuColumn({
-		largePortraitMenuIconButton1,
-		largePortraitMenuIconButton2,
-		largePortraitMenuIconButton3,
-		largePortraitMenuIconButton4,
-		largePortraitMenuIconButton5,
-		largePortraitMenuIconButton6,
-		largePortraitMenuIconButton7,
-		largePortraitMenuIconButton8,
-		largePortraitMenuPrevButton,
-		largePortraitMenuNextButton,
-	}),
-	menuColumn({
-		largePortraitMenuPreviewImage,
-	}),
-}, "Large Portrait", &characterDataMenuGrid);
-
-std::shared_ptr<menuData> idleAnimationMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "IDLEANIMATIONMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "IDLEANIMATIONMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "IDLEANIMATIONMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "IDLEANIMATIONMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "IDLEANIMATIONMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "IDLEANIMATIONMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "IDLEANIMATIONMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "IDLEANIMATIONMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "IDLEANIMATIONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "IDLEANIMATIONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuPreviewImage(new menuDataImageField(250, 20 + 29 * 2, 0, 0, "IDLEANIMATIONMENU_PreviewImage", "", true, nullptr, nullptr, 4));
-std::shared_ptr<menuData> idleAnimationMenuPrevImageButton(new menuDataButton(250, 20 + 29 * 0, 180, 20, "IDLEANIMATIONMENU_PrevImageButton", "Prev", true, prevImageButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuNextImageButton(new menuDataButton(430, 20 + 29 * 0, 180, 20, "IDLEANIMATIONMENU_NextImageButton", "Next", true, nextImageButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuPlayButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "IDLEANIMATIONMENU_PlayButton", "Play", true, playPauseButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuPauseButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "IDLEANIMATIONMENU_PauseButton", "Pause", false, playPauseButton, nullptr));
-std::shared_ptr<menuData> idleAnimationMenuFrameNumberText(new menuDataText(430, 30 + 29 * 1, 180, 20, "IDLEANIMATIONMENU_FrameNumberText", "", true, nullptr, animationFrameText));
-
-menuGrid idleAnimationMenuGrid({
-	menuColumn({
-		idleAnimationMenuIconButton1,
-		idleAnimationMenuIconButton2,
-		idleAnimationMenuIconButton3,
-		idleAnimationMenuIconButton4,
-		idleAnimationMenuIconButton5,
-		idleAnimationMenuIconButton6,
-		idleAnimationMenuIconButton7,
-		idleAnimationMenuIconButton8,
-		idleAnimationMenuPrevButton,
-		idleAnimationMenuNextButton,
-	}),
-	menuColumn({
-		idleAnimationMenuPreviewImage,
-		idleAnimationMenuPrevImageButton,
-		idleAnimationMenuNextImageButton,
-		idleAnimationMenuPlayButton,
-		idleAnimationMenuPauseButton,
-		idleAnimationMenuFrameNumberText,
-	}),
-}, "Idle Animation", &characterDataMenuGrid);
-
-std::shared_ptr<menuData> runAnimationMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "RUNANIMATIONMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "RUNANIMATIONMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "RUNANIMATIONMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "RUNANIMATIONMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "RUNANIMATIONMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "RUNANIMATIONMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "RUNANIMATIONMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "RUNANIMATIONMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "RUNANIMATIONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "RUNANIMATIONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuPreviewImage(new menuDataImageField(250, 20 + 29 * 2, 0, 0, "RUNANIMATIONMENU_PreviewImage", "", true, nullptr, nullptr, 12));
-std::shared_ptr<menuData> runAnimationMenuPrevImageButton(new menuDataButton(250, 20 + 29 * 0, 180, 20, "RUNANIMATIONMENU_PrevImageButton", "Prev", true, prevImageButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuNextImageButton(new menuDataButton(430, 20 + 29 * 0, 180, 20, "RUNANIMATIONMENU_NextImageButton", "Next", true, nextImageButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuPlayButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "RUNANIMATIONMENU_PlayButton", "Play", true, playPauseButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuPauseButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "RUNANIMATIONMENU_PauseButton", "Pause", false, playPauseButton, nullptr));
-std::shared_ptr<menuData> runAnimationMenuFrameNumberText(new menuDataText(430, 30 + 29 * 1, 180, 20, "RUNANIMATIONMENU_FrameNumberText", "", true, nullptr, animationFrameText));
-
-menuGrid runAnimationMenuGrid({
-	menuColumn({
-		runAnimationMenuIconButton1,
-		runAnimationMenuIconButton2,
-		runAnimationMenuIconButton3,
-		runAnimationMenuIconButton4,
-		runAnimationMenuIconButton5,
-		runAnimationMenuIconButton6,
-		runAnimationMenuIconButton7,
-		runAnimationMenuIconButton8,
-		runAnimationMenuPrevButton,
-		runAnimationMenuNextButton,
-	}),
-	menuColumn({
-		runAnimationMenuPreviewImage,
-		runAnimationMenuPrevImageButton,
-		runAnimationMenuNextImageButton,
-		runAnimationMenuPlayButton,
-		runAnimationMenuPauseButton,
-		runAnimationMenuFrameNumberText,
-	}),
-}, "Run Animation", &characterDataMenuGrid);
-
-std::shared_ptr<menuData> weaponDataMenuWeaponName(new menuDataTextBoxField(60, 20 + 29 * 0, 130, 20, "WEAPONDATAMENU_WeaponName", "weaponName", true, nullptr, nullptr));
-std::shared_ptr<menuData> weaponDataMenuWeaponIcon(new menuDataButton(60, 20 + 29 * 1, 180, 20, "WEAPONDATAMENU_WeaponIcon", "weaponIcon", true, weaponIconClickButton, nullptr));
-std::shared_ptr<menuData> weaponDataMenuAwakenedWeaponIcon(new menuDataButton(60, 20 + 29 * 2, 180, 20, "WEAPONDATAMENU_AwakenedWeaponIcon", "Awakened weaponIcon", true, weaponAwakenedIconClickButton, nullptr));
-std::shared_ptr<menuData> weaponDataMenuWeaponLevelMenu(new menuDataButton(60, 20 + 29 * 3, 180, 20, "WEAPONDATAMENU_WeaponLevelMenu", "Weapon Levels", true, weaponLevelMenuClickButton, nullptr));
-std::shared_ptr<menuData> weaponDataMenuWeaponAnimation(new menuDataButton(60, 20 + 29 * 4, 180, 20, "WEAPONDATAMENU_WeaponAnimation", "Weapon Animation", true, weaponAnimationClickButton, nullptr));
-std::shared_ptr<menuData> weaponDataMenuWeaponType(new menuDataSelection(60, 20 + 29 * 5, 180, 20, "WEAPONDATAMENU_WeaponType", "Weapon Type", true, nullptr, nullptr, { "Melee", "Multishot", "Ranged" }));
-// TODO: Implement later
-//std::shared_ptr<menuData> weaponDataMenuOnTrigger(new menuData(60, 20 + 29 * 6, 180, 20, "WEAPONDATAMENU_OnTrigger", "On Trigger Menu", true, nullptr, nullptr, MENUDATATYPE_Button));
-//std::shared_ptr<menuData> weaponDataMenuSubWeapon(new menuData(60, 20 + 29 * 7, 180, 20, "WEAPONDATAMENU_SubWeapon", "Sub Weapon Menu", true, nullptr, nullptr, MENUDATATYPE_Button));
-menuGrid weaponDataMenuGrid({
-	menuColumn({
-		weaponDataMenuWeaponName,
-		weaponDataMenuWeaponIcon,
-		weaponDataMenuAwakenedWeaponIcon,
-		weaponDataMenuWeaponLevelMenu,
-		weaponDataMenuWeaponAnimation,
-		weaponDataMenuWeaponType,
-	}),
-}, "Weapon Data", &characterCreatorMenuGrid);
-
-std::shared_ptr<menuData> weaponIconMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "WEAPONICONMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "WEAPONICONMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "WEAPONICONMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "WEAPONICONMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "WEAPONICONMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "WEAPONICONMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "WEAPONICONMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "WEAPONICONMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "WEAPONICONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "WEAPONICONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> weaponIconMenuIconPreviewImage(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "WEAPONICONMENU_PreviewImage", "", true, nullptr, nullptr, 0));
-
-menuGrid weaponIconMenuGrid({
-	menuColumn({
-		weaponIconMenuIconButton1,
-		weaponIconMenuIconButton2,
-		weaponIconMenuIconButton3,
-		weaponIconMenuIconButton4,
-		weaponIconMenuIconButton5,
-		weaponIconMenuIconButton6,
-		weaponIconMenuIconButton7,
-		weaponIconMenuIconButton8,
-		weaponIconMenuIconPrevButton,
-		weaponIconMenuIconNextButton,
-	}),
-	menuColumn({
-		weaponIconMenuIconPreviewImage,
-	}),
-}, "Weapon Icon", &weaponDataMenuGrid);
-
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "WEAPONAWAKENEDICONMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "WEAPONAWAKENEDICONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "WEAPONAWAKENEDICONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> weaponAwakenedIconMenuIconPreviewImage(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "WEAPONAWAKENEDICONMENU_PreviewImage", "", true, nullptr, nullptr, 0));
-
-menuGrid weaponAwakenedIconMenuGrid({
-	menuColumn({
-		weaponAwakenedIconMenuIconButton1,
-		weaponAwakenedIconMenuIconButton2,
-		weaponAwakenedIconMenuIconButton3,
-		weaponAwakenedIconMenuIconButton4,
-		weaponAwakenedIconMenuIconButton5,
-		weaponAwakenedIconMenuIconButton6,
-		weaponAwakenedIconMenuIconButton7,
-		weaponAwakenedIconMenuIconButton8,
-		weaponAwakenedIconMenuIconPrevButton,
-		weaponAwakenedIconMenuIconNextButton,
-	}),
-	menuColumn({
-		weaponAwakenedIconMenuIconPreviewImage,
-	}),
-}, "Weapon Awakened Icon", &weaponDataMenuGrid);
-
-std::shared_ptr<menuData> weaponAnimationMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "WEAPONANIMATIONMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "WEAPONANIMATIONMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "WEAPONANIMATIONMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "WEAPONANIMATIONMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "WEAPONANIMATIONMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "WEAPONANIMATIONMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "WEAPONANIMATIONMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "WEAPONANIMATIONMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "WEAPONANIMATIONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuIconNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "WEAPONANIMATIONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuPreviewImage(new menuDataImageField(250, 20 + 29 * 2, 0, 0, "WEAPONANIMATIONMENU_PreviewImage", "", true, nullptr, nullptr, 30));
-std::shared_ptr<menuData> weaponAnimationMenuPrevImageButton(new menuDataButton(250, 20 + 29 * 0, 180, 20, "WEAPONANIMATIONMENU_PrevImageButton", "Prev", true, prevImageButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuNextImageButton(new menuDataButton(430, 20 + 29 * 0, 180, 20, "WEAPONANIMATIONMENU_NextImageButton", "Next", true, nextImageButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuPlayButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "WEAPONANIMATIONMENU_PlayButton", "Play", true, playPauseButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuPauseButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "WEAPONANIMATIONMENU_PauseButton", "Pause", false, playPauseButton, nullptr));
-std::shared_ptr<menuData> weaponAnimationMenuFrameNumberText(new menuDataText(430, 30 + 29 * 1, 180, 20, "WEAPONANIMATIONMENU_FrameNumberText", "", true, nullptr, animationFrameText));
-
-menuGrid weaponAnimationMenuGrid({
-	menuColumn({
-		weaponAnimationMenuIconButton1,
-		weaponAnimationMenuIconButton2,
-		weaponAnimationMenuIconButton3,
-		weaponAnimationMenuIconButton4,
-		weaponAnimationMenuIconButton5,
-		weaponAnimationMenuIconButton6,
-		weaponAnimationMenuIconButton7,
-		weaponAnimationMenuIconButton8,
-		weaponAnimationMenuIconPrevButton,
-		weaponAnimationMenuIconNextButton,
-	}),
-	menuColumn({
-		weaponAnimationMenuPreviewImage,
-		weaponAnimationMenuPrevImageButton,
-		weaponAnimationMenuNextImageButton,
-		weaponAnimationMenuPlayButton,
-		weaponAnimationMenuPauseButton,
-		weaponAnimationMenuFrameNumberText,
-	}),
-}, "Weapon Animation", &weaponDataMenuGrid);
-
-std::vector<std::shared_ptr<menuData>> weaponLevelMenuButtonList({
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 0, 180, 20, "WEAPONLEVELMENU_Button1", "Level 1", true, weaponLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELMENU_Button2", "Level 2", true, weaponLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELMENU_Button3", "Level 3", true, weaponLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELMENU_Button4", "Level 4", true, weaponLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELMENU_Button5", "Level 5", true, weaponLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELMENU_Button6", "Level 6", true, weaponLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELMENU_Button7", "Level 7", true, weaponLevelClickButton, nullptr)),
-});
-
-menuGrid weaponLevelMenuGrid({
-	menuColumn(weaponLevelMenuButtonList),
-}, "Weapon Level", &weaponDataMenuGrid);
-
-std::shared_ptr<menuData> weaponLevelDataMenuDescription(new menuDataButton(60, 20 + 29 * 0, 180, 20, "WEAPONLEVELDATAMENU_LevelDescription", "Level Description", true, weaponLevelDescriptionClickButton, nullptr));
-
-std::vector<std::shared_ptr<menuData>> weaponLevelAttackTimeMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELDATAMENU_AttackTime1", "Attack Time", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELDATAMENU_AttackTime2", "Attack Time", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELDATAMENU_AttackTime3", "Attack Time", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELDATAMENU_AttackTime4", "Attack Time", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELDATAMENU_AttackTime5", "Attack Time", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELDATAMENU_AttackTime6", "Attack Time", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 1, 180, 20, "WEAPONLEVELDATAMENU_AttackTime7", "Attack Time", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelDurationMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELDATAMENU_Duration1", "Duration", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELDATAMENU_Duration2", "Duration", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELDATAMENU_Duration3", "Duration", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELDATAMENU_Duration4", "Duration", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELDATAMENU_Duration5", "Duration", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELDATAMENU_Duration6", "Duration", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 2, 180, 20, "WEAPONLEVELDATAMENU_Duration7", "Duration", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelDamageMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELDATAMENU_Damage1", "Damage", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELDATAMENU_Damage2", "Damage", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELDATAMENU_Damage3", "Damage", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELDATAMENU_Damage4", "Damage", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELDATAMENU_Damage5", "Damage", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELDATAMENU_Damage6", "Damage", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 3, 180, 20, "WEAPONLEVELDATAMENU_Damage7", "Damage", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelHitLimitMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELDATAMENU_HitLimit1", "Hit Limit", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELDATAMENU_HitLimit2", "Hit Limit", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELDATAMENU_HitLimit3", "Hit Limit", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELDATAMENU_HitLimit4", "Hit Limit", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELDATAMENU_HitLimit5", "Hit Limit", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELDATAMENU_HitLimit6", "Hit Limit", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 4, 180, 20, "WEAPONLEVELDATAMENU_HitLimit7", "Hit Limit", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelSpeedMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELDATAMENU_Speed1", "Speed", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELDATAMENU_Speed2", "Speed", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELDATAMENU_Speed3", "Speed", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELDATAMENU_Speed4", "Speed", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELDATAMENU_Speed5", "Speed", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELDATAMENU_Speed6", "Speed", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 5, 180, 20, "WEAPONLEVELDATAMENU_Speed7", "Speed", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelHitCDMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELDATAMENU_HitCD1", "HitCD", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELDATAMENU_HitCD2", "HitCD", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELDATAMENU_HitCD3", "HitCD", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELDATAMENU_HitCD4", "HitCD", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELDATAMENU_HitCD5", "HitCD", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELDATAMENU_HitCD6", "HitCD", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 6, 180, 20, "WEAPONLEVELDATAMENU_HitCD7", "HitCD", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelAttackCountMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 7, 180, 20, "WEAPONLEVELDATAMENU_AttackCount1", "Count", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 7, 180, 20, "WEAPONLEVELDATAMENU_AttackCount2", "Count", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 7, 180, 20, "WEAPONLEVELDATAMENU_AttackCount3", "Count", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 7, 180, 20, "WEAPONLEVELDATAMENU_AttackCount4", "Count", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 7, 180, 20, "WEAPONLEVELDATAMENU_AttackCount5", "Count", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 7, 180, 20, "WEAPONLEVELDATAMENU_AttackCount6", "Count", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 7, 180, 20, "WEAPONLEVELDATAMENU_AttackCount7", "Count", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelAttackDelayMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 8, 180, 20, "WEAPONLEVELDATAMENU_AttackDelay1", "Delay", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 8, 180, 20, "WEAPONLEVELDATAMENU_AttackDelay2", "Delay", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 8, 180, 20, "WEAPONLEVELDATAMENU_AttackDelay3", "Delay", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 8, 180, 20, "WEAPONLEVELDATAMENU_AttackDelay4", "Delay", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 8, 180, 20, "WEAPONLEVELDATAMENU_AttackDelay5", "Delay", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 8, 180, 20, "WEAPONLEVELDATAMENU_AttackDelay6", "Delay", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 8, 180, 20, "WEAPONLEVELDATAMENU_AttackDelay7", "Delay", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> weaponLevelRangeMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 9, 180, 20, "WEAPONLEVELDATAMENU_Range1", "Range", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 9, 180, 20, "WEAPONLEVELDATAMENU_Range2", "Range", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 9, 180, 20, "WEAPONLEVELDATAMENU_Range3", "Range", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 9, 180, 20, "WEAPONLEVELDATAMENU_Range4", "Range", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 9, 180, 20, "WEAPONLEVELDATAMENU_Range5", "Range", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 9, 180, 20, "WEAPONLEVELDATAMENU_Range6", "Range", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(60, 20 + 29 * 9, 180, 20, "WEAPONLEVELDATAMENU_Range7", "Range", false, nullptr, nullptr)),
-});
-
-menuGrid weaponLevelDataMenuGrid(
-	[]() -> std::vector<menuColumn> {
-		std::vector<menuColumn> menuColumnList;
-		for (int i = 0; i < 7; i++)
-		{
-			menuColumn curMenuColumn({
-				weaponLevelDataMenuDescription,
-				weaponLevelAttackTimeMenuList[i],
-				weaponLevelDurationMenuList[i],
-				weaponLevelDamageMenuList[i],
-				weaponLevelHitLimitMenuList[i],
-				weaponLevelSpeedMenuList[i],
-				weaponLevelHitCDMenuList[i],
-				weaponLevelAttackCountMenuList[i],
-				weaponLevelAttackDelayMenuList[i],
-				weaponLevelRangeMenuList[i]
-			});
-			menuColumnList.push_back(curMenuColumn);
-		}
-		return menuColumnList;
-	}()
-, "Weapon Level Data", &weaponLevelMenuGrid);
-
-std::vector<std::shared_ptr<menuData>> weaponLevelDescriptionMenuList({
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "WEAPONLEVELDESCRIPTIONMENU_Description1", "Weapon Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "WEAPONLEVELDESCRIPTIONMENU_Description2", "Weapon Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "WEAPONLEVELDESCRIPTIONMENU_Description3", "Weapon Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "WEAPONLEVELDESCRIPTIONMENU_Description4", "Weapon Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "WEAPONLEVELDESCRIPTIONMENU_Description5", "Weapon Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "WEAPONLEVELDESCRIPTIONMENU_Description6", "Weapon Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "WEAPONLEVELDESCRIPTIONMENU_Description7", "Weapon Description", false, nullptr, nullptr)),
-});
-
-menuGrid weaponLevelDescriptionMenuGrid({
-	menuColumn(weaponLevelDescriptionMenuList),
-}, "Weapon Level Description", &weaponLevelDataMenuGrid);
-
-std::vector<std::shared_ptr<menuData>> skillsMenuButtonList({
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 0, 180, 20, "SKILLSMENU_Button1", "Skill 1", true, skillMenuClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 1, 180, 20, "SKILLSMENU_Button2", "Skill 2", true, skillMenuClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 2, 180, 20, "SKILLSMENU_Button3", "Skill 3", true, skillMenuClickButton, nullptr)),
-});
-
-menuGrid skillsMenuGrid({
-	menuColumn({
-		skillsMenuButtonList[0],
-		skillsMenuButtonList[1],
-		skillsMenuButtonList[2]
-	}),
-}, "Skills Menu", &characterCreatorMenuGrid);
-
-std::shared_ptr<menuData> skillIconMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "SKILLICONMENU_IconButton1", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "SKILLICONMENU_IconButton2", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "SKILLICONMENU_IconButton3", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "SKILLICONMENU_IconButton4", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "SKILLICONMENU_IconButton5", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "SKILLICONMENU_IconButton6", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "SKILLICONMENU_IconButton7", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "SKILLICONMENU_IconButton8", "", false, clickSkillIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "SKILLICONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> skillIconMenuIconNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "SKILLICONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::vector<std::shared_ptr<menuData>> skillIconMenuIconPreviewImageList({
-	std::shared_ptr<menuData>(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "SKILLICONMENU_PreviewImage", "", false, nullptr, nullptr, 0)),
-	std::shared_ptr<menuData>(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "SKILLICONMENU_PreviewImage", "", false, nullptr, nullptr, 0)),
-	std::shared_ptr<menuData>(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "SKILLICONMENU_PreviewImage", "", false, nullptr, nullptr, 0)),
-});
-
-std::shared_ptr<menuData> skillsDataMenuIconButton(new menuDataButton(330, 20 + 29 * 0, 180, 20, "SKILLSMENU_IconButton", "Skill Icon", true, skillIconMenuClickButton, nullptr));
-std::vector<std::shared_ptr<menuData>> skillsDataMenuNameList({
-	std::shared_ptr<menuData>(new menuDataTextBoxField(330, 20 + 29 * 1, 180, 20, "SKILLSMENU_Name1", "Skill Name", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(330, 20 + 29 * 1, 180, 20, "SKILLSMENU_Name2", "Skill Name", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(330, 20 + 29 * 1, 180, 20, "SKILLSMENU_Name3", "Skill Name", false, nullptr, nullptr)),
-	});
-std::vector<std::shared_ptr<menuData>> skillsDataMenuLevelList({
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 0, 180, 20, "SKILLSMENU_Level1", "Level 1", true, skillLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 1, 180, 20, "SKILLSMENU_Level2", "Level 2", true, skillLevelClickButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 2, 180, 20, "SKILLSMENU_Level3", "Level 3", true, skillLevelClickButton, nullptr)),
-});
-
-menuGrid skillsDataMenuGrid({
-	menuColumn(skillsDataMenuLevelList),
-	menuColumn({
-		skillsDataMenuIconButton,
-		skillsDataMenuNameList[0],
-		skillsDataMenuNameList[1],
-		skillsDataMenuNameList[2],
-	}),
-}, "Skills Data Menu", &skillsMenuGrid);
-
-menuGrid skillIconMenuGrid({
-	menuColumn({
-		skillIconMenuIconButton1,
-		skillIconMenuIconButton2,
-		skillIconMenuIconButton3,
-		skillIconMenuIconButton4,
-		skillIconMenuIconButton5,
-		skillIconMenuIconButton6,
-		skillIconMenuIconButton7,
-		skillIconMenuIconButton8,
-		skillIconMenuIconPrevButton,
-		skillIconMenuIconNextButton,
-	}),
-	menuColumn(skillIconMenuIconPreviewImageList),
-}, "Skills Icon Menu", &skillsDataMenuGrid);
-
-std::shared_ptr<menuData> skillsDataLevelMenuDescription(new menuDataButton(330, 20 + 29 * 0, 180, 20, "SKILLSMENU_Description", "Skill Description", true, skillDescriptionClickButton, nullptr));
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuAttackButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK1_Level1", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK1_Level2", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK1_Level3", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK2_Level1", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK2_Level2", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK2_Level3", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK3_Level1", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK3_Level2", "ATK+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 0, 130, 20, "SKILLSMENU_ATK3_Level3", "ATK+", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuCritButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT1_Level1", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT1_Level2", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT1_Level3", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT2_Level1", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT2_Level2", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT2_Level3", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT3_Level1", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT3_Level2", "CRIT+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "SKILLSMENU_CRIT3_Level3", "CRIT+", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuHasteButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE1_Level1", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE1_Level2", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE1_Level3", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE2_Level1", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE2_Level2", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE2_Level3", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE3_Level1", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE3_Level2", "Haste+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "SKILLSMENU_HASTE3_Level3", "Haste+", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuSpeedButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD1_Level1", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD1_Level2", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD1_Level3", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD2_Level1", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD2_Level2", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD2_Level3", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD3_Level1", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD3_Level2", "SPD+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "SKILLSMENU_SPD3_Level3", "SPD+", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuDRButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR1_Level1", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR1_Level2", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR1_Level3", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR2_Level1", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR2_Level2", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR2_Level3", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR3_Level1", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR3_Level2", "DR*", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SKILLSMENU_DR3_Level3", "DR*", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuHealMultiplierButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier1_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier1_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier1_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier2_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier2_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier2_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier3_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier3_Level1", "healMultiplier+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "SKILLSMENU_HealMultiplier3_Level1", "healMultiplier+", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuFoodButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food1_Level1", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food1_Level2", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food1_Level3", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food2_Level1", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food2_Level2", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food2_Level3", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food3_Level1", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food3_Level2", "food+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "SKILLSMENU_Food3_Level3", "food+", false, nullptr, nullptr)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillsDataLevelMenuWeaponSizeMultiplierButtonList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier1_Level1", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier1_Level2", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier1_Level3", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier2_Level1", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier2_Level2", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier2_Level3", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier3_Level1", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier3_Level2", "weaponSizeMult+", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "SKILLSMENU_WeaponSizeMultiplier3_Level3", "weaponSizeMult+", false, nullptr, nullptr)),
-});
-
-std::shared_ptr<menuData> skillsDataLevelMenuOnTriggerButton(new menuDataButton(330, 20 + 29 * 1, 180, 20, "SKILLSMENU_OnTrigger", "OnTrigger", true, skillOnTriggerClickButton, nullptr));
-
-menuGrid skillsDataLevelMenuGrid(
-	[]() -> std::vector<menuColumn> {
-		std::vector<menuColumn> menuColumnList;
-		for (int i = 0; i < 9; i++)
-		{
-			menuColumn curMenuColumn({
-				skillsDataLevelMenuAttackButtonList[i],
-				skillsDataLevelMenuCritButtonList[i],
-				skillsDataLevelMenuHasteButtonList[i],
-				skillsDataLevelMenuSpeedButtonList[i],
-				skillsDataLevelMenuDRButtonList[i],
-				skillsDataLevelMenuHealMultiplierButtonList[i],
-				skillsDataLevelMenuFoodButtonList[i],
-				skillsDataLevelMenuWeaponSizeMultiplierButtonList[i],
-			});
-			menuColumnList.push_back(curMenuColumn);
-		}
-		menuColumnList.push_back(menuColumn({ skillsDataLevelMenuDescription, skillsDataLevelMenuOnTriggerButton }));
-		return menuColumnList;
-	}()
-, "Skills Data Level Menu", &skillsDataMenuGrid);
-
-std::vector<std::shared_ptr<menuData>> skillDataLevelDescriptionMenuList({
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description1_Level1", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description1_Level2", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description1_Level3", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description2_Level1", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description2_Level2", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description2_Level3", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description3_Level1", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description3_Level2", "Skill Description", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SKILLDESCRIPTIONMENU_Description3_Level3", "Skill Description", false, nullptr, nullptr)),
-});
-
-menuGrid skillDataLevelDescriptionMenuGrid({
-	menuColumn(skillDataLevelDescriptionMenuList),
-}, "Skills Description Menu", &skillsDataLevelMenuGrid);
-
-std::vector<std::shared_ptr<menuData>> skillOnTriggerBuffSelectionMenuList({
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection1_Level1", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection1_Level2", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection1_Level3", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection2_Level1", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection2_Level2", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection2_Level3", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection3_Level1", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection3_Level2", "Select Buff", false, nullptr, nullptr, { "" })),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 0, 180, 20, "SKILLONTRIGGERMENU_BuffSelection3_Level3", "Select Buff", false, nullptr, nullptr, { "" })),
-});
-
-// TODO: Should probably improve the onTrigger selection to not need to default to none
-std::vector<std::string> onTriggerTypes{ "NONE", "onDebuff", "onAttackCreate", "onCriticalHit", "onHeal", "onKill", "onTakeDamage", "onDodge" };
-
-std::vector<std::shared_ptr<menuData>> skillOnTriggerTypeSelectionMenuList({
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection1_Level1", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection1_Level2", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection1_Level3", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection2_Level1", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection2_Level2", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection2_Level3", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection3_Level1", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection3_Level2", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-	std::shared_ptr<menuData>(new menuDataSelection(100, 20 + 29 * 1, 180, 20, "SKILLONTRIGGERMENU_TypeSelection3_Level3", "onTrigger", false, nullptr, nullptr, onTriggerTypes)),
-});
-
-std::vector<std::shared_ptr<menuData>> skillOnTriggerProbabilityMenuList({
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability1_Level1", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability1_Level2", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability1_Level3", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability2_Level1", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability2_Level2", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability2_Level3", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability3_Level1", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability3_Level2", "Probability", false, nullptr, nullptr)),
-	std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SKILLONTRIGGERMENU_Probability3_Level3", "Probability", false, nullptr, nullptr)),
-});
-
-menuGrid skillOnTriggerMenuGrid({
-	[]() -> std::vector<menuColumn> {
-		std::vector<menuColumn> menuColumnList;
-		for (int i = 0; i < 9; i++)
-		{
-			menuColumn curMenuColumn({
-				skillOnTriggerBuffSelectionMenuList[i],
-				skillOnTriggerTypeSelectionMenuList[i],
-				skillOnTriggerProbabilityMenuList[i],
-			});
-			menuColumnList.push_back(curMenuColumn);
-		}
-		return menuColumnList;
-	}(),
-}, "Skills OnTrigger Menu", &skillsDataLevelMenuGrid);
-
-std::shared_ptr<menuData> specialMenuSpecialAnimation(new menuDataButton(100, 20 + 29 * 0, 180, 20, "SPECIALMENU_SpecialAnimation", "Special Animation", true, specialAnimationClickButton, nullptr));
-std::shared_ptr<menuData> specialMenuDamage(new menuDataNumberField(100, 20 + 29 * 1, 180, 20, "SPECIALMENU_Damage", "Damage", true, nullptr, nullptr));
-std::shared_ptr<menuData> specialMenuDuration(new menuDataNumberField(100, 20 + 29 * 2, 180, 20, "SPECIALMENU_Duration", "Duration", true, nullptr, nullptr));
-std::shared_ptr<menuData> specialMenuSpecialIcon(new menuDataButton(100, 20 + 29 * 3, 180, 20, "SPECIALMENU_SpecialIcon", "Special Icon", true, specialIconClickButton, nullptr));
-std::shared_ptr<menuData> specialMenuSpecialCooldown(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "SPECIALMENU_SpecialCooldown", "Special Cooldown", true, nullptr, nullptr));
-std::shared_ptr<menuData> specialMenuSpecialName(new menuDataTextBoxField(100, 20 + 29 * 5, 130, 20, "SPECIALMENU_SpecialName", "Special Name", true, nullptr, nullptr));
-std::shared_ptr<menuData> specialMenuSpecialDescription(new menuDataButton(100, 20 + 29 * 6, 180, 20, "SPECIALMENU_SpecialDesc", "Special Description", true, specialDescriptionClickButton, nullptr));
-
-menuGrid specialMenuGrid({
-	menuColumn({
-		specialMenuSpecialAnimation,
-		specialMenuDamage,
-		specialMenuDuration,
-		specialMenuSpecialIcon,
-		specialMenuSpecialCooldown,
-		specialMenuSpecialName,
-		specialMenuSpecialDescription
-	}),
-}, "Special Menu", &characterCreatorMenuGrid);
-
-std::shared_ptr<menuData> specialAnimationMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "SPECIALANIMATIONMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "SPECIALANIMATIONMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "SPECIALANIMATIONMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "SPECIALANIMATIONMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "SPECIALANIMATIONMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "SPECIALANIMATIONMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "SPECIALANIMATIONMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "SPECIALANIMATIONMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "SPECIALANIMATIONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuIconNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "SPECIALANIMATIONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuPreviewImage(new menuDataImageField(250, 20 + 29 * 2, 0, 0, "SPECIALANIMATIONMENU_PreviewImage", "", true, nullptr, nullptr, 30));
-std::shared_ptr<menuData> specialAnimationMenuPrevImageButton(new menuDataButton(250, 20 + 29 * 0, 180, 20, "SPECIALANIMATIONMENU_PrevImageButton", "Prev", true, prevImageButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuNextImageButton(new menuDataButton(430, 20 + 29 * 0, 180, 20, "SPECIALANIMATIONMENU_NextImageButton", "Next", true, nextImageButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuPlayButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "SPECIALANIMATIONMENU_PlayButton", "Play", true, playPauseButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuPauseButton(new menuDataButton(250, 20 + 29 * 1, 180, 20, "SPECIALANIMATIONMENU_PauseButton", "Pause", false, playPauseButton, nullptr));
-std::shared_ptr<menuData> specialAnimationMenuFrameNumberText(new menuDataText(430, 30 + 29 * 1, 180, 20, "SPECIALANIMATIONMENU_FrameNumberText", "", true, nullptr, animationFrameText));
-
-menuGrid specialAnimationMenuGrid({
-	menuColumn({
-		specialAnimationMenuIconButton1,
-		specialAnimationMenuIconButton2,
-		specialAnimationMenuIconButton3,
-		specialAnimationMenuIconButton4,
-		specialAnimationMenuIconButton5,
-		specialAnimationMenuIconButton6,
-		specialAnimationMenuIconButton7,
-		specialAnimationMenuIconButton8,
-		specialAnimationMenuIconPrevButton,
-		specialAnimationMenuIconNextButton,
-	}),
-	menuColumn({
-		specialAnimationMenuPreviewImage,
-		specialAnimationMenuPrevImageButton,
-		specialAnimationMenuNextImageButton,
-		specialAnimationMenuPlayButton,
-		specialAnimationMenuPauseButton,
-		specialAnimationMenuFrameNumberText,
-	}),
-}, "Special Animation", &specialMenuGrid);
-
-
-std::shared_ptr<menuData> specialIconMenuIconButton1(new menuDataButton(60, 20 + 29 * 0, 180, 20, "SPECIALICONMENU_IconButton1", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconButton2(new menuDataButton(60, 20 + 29 * 1, 180, 20, "SPECIALICONMENU_IconButton2", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconButton3(new menuDataButton(60, 20 + 29 * 2, 180, 20, "SPECIALICONMENU_IconButton3", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconButton4(new menuDataButton(60, 20 + 29 * 3, 180, 20, "SPECIALICONMENU_IconButton4", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconButton5(new menuDataButton(60, 20 + 29 * 4, 180, 20, "SPECIALICONMENU_IconButton5", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconButton6(new menuDataButton(60, 20 + 29 * 5, 180, 20, "SPECIALICONMENU_IconButton6", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconButton7(new menuDataButton(60, 20 + 29 * 6, 180, 20, "SPECIALICONMENU_IconButton7", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconButton8(new menuDataButton(60, 20 + 29 * 7, 180, 20, "SPECIALICONMENU_IconButton8", "", false, clickIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "SPECIALICONMENU_PrevButton", "Prev", true, prevIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "SPECIALICONMENU_NextButton", "Next", true, nextIconButton, nullptr));
-std::shared_ptr<menuData> specialIconMenuIconPreviewImage(new menuDataImageField(250, 20 + 29 * 0, 0, 0, "SPECIALICONMENU_PreviewImage", "", true, nullptr, nullptr, 0));
-
-menuGrid specialIconMenuGrid({
-	menuColumn({
-		specialIconMenuIconButton1,
-		specialIconMenuIconButton2,
-		specialIconMenuIconButton3,
-		specialIconMenuIconButton4,
-		specialIconMenuIconButton5,
-		specialIconMenuIconButton6,
-		specialIconMenuIconButton7,
-		specialIconMenuIconButton8,
-		specialIconMenuIconPrevButton,
-		specialIconMenuIconNextButton,
-	}),
-	menuColumn({
-		specialIconMenuIconPreviewImage,
-	}),
-}, "Special Icon", &specialMenuGrid);
-
-std::shared_ptr<menuData> specialDescriptionMenuSpecialDescription(new menuDataTextBoxField(150, 20 + 29 * 0, 300, 200, "SPECIALDESCRIPTIONMENU_SpecialDescription", "Special Description", true, nullptr, nullptr));
-
-menuGrid specialDescriptionMenuGrid({
-	menuColumn({
-		specialDescriptionMenuSpecialDescription
-	}),
-}, "Special Description", &specialMenuGrid);
-
-int buffMenuPage = 0;
-std::deque<buffDataMenuGrid> buffMenuDeque;
-
-std::vector<std::shared_ptr<menuData>> buffMenuButtonList({
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 0, 180, 20, "BUFFMENU_Button1", "", false, clickBuffMenuButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 1, 180, 20, "BUFFMENU_Button2", "", false, clickBuffMenuButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 2, 180, 20, "BUFFMENU_Button3", "", false, clickBuffMenuButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 3, 180, 20, "BUFFMENU_Button4", "", false, clickBuffMenuButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 4, 180, 20, "BUFFMENU_Button5", "", false, clickBuffMenuButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 5, 180, 20, "BUFFMENU_Button6", "", false, clickBuffMenuButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 6, 180, 20, "BUFFMENU_Button7", "", false, clickBuffMenuButton, nullptr)),
-	std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 7, 180, 20, "BUFFMENU_Button8", "", false, clickBuffMenuButton, nullptr)),
-});
-std::shared_ptr<menuData> buffMenuPrevButton(new menuDataButton(60, 20 + 29 * 8, 180, 20, "BUFFMENU_PrevButton", "Prev", true, prevBuffButton, nullptr));
-std::shared_ptr<menuData> buffMenuNextButton(new menuDataButton(60, 20 + 29 * 9, 180, 20, "BUFFMENU_NextButton", "Next", true, nextBuffButton, nullptr));
-std::shared_ptr<menuData> buffMenuAddBuffButton(new menuDataButton(330, 20 + 29 * 9, 180, 20, "BUFFMENU_AddBuffButton", "Add Buff", true, addBuffMenuButton, nullptr));
-
-menuGrid buffMenuGrid({
-	menuColumn({
-		buffMenuButtonList[0],
-		buffMenuButtonList[1],
-		buffMenuButtonList[2],
-		buffMenuButtonList[3],
-		buffMenuButtonList[4],
-		buffMenuButtonList[5],
-		buffMenuButtonList[6],
-		buffMenuButtonList[7],
-		buffMenuPrevButton,
-		buffMenuNextButton,
-	}),
-	menuColumn({
-		buffMenuAddBuffButton
-	}),
-}, "Buff", &characterCreatorMenuGrid, reloadBuffs);
 
 void initMenu()
 {
 	characterCreatorMenuGrid.initMenuGrid();
-	loadCharacterMenuGrid.initMenuGrid();
-	characterDataMenuGrid.initMenuGrid();
-	portraitMenuGrid.initMenuGrid();
-	largePortraitMenuGrid.initMenuGrid();
-	idleAnimationMenuGrid.initMenuGrid();
-	runAnimationMenuGrid.initMenuGrid();
-	weaponDataMenuGrid.initMenuGrid();
-	weaponIconMenuGrid.initMenuGrid();
-	weaponAwakenedIconMenuGrid.initMenuGrid();
-	weaponAnimationMenuGrid.initMenuGrid();
-	weaponLevelMenuGrid.initMenuGrid();
-	weaponLevelDataMenuGrid.initMenuGrid();
-	weaponLevelDescriptionMenuGrid.initMenuGrid();
-	skillsMenuGrid.initMenuGrid();
-	skillsDataMenuGrid.initMenuGrid();
-	skillIconMenuGrid.initMenuGrid();
-	skillsDataLevelMenuGrid.initMenuGrid();
-	skillDataLevelDescriptionMenuGrid.initMenuGrid();
-	skillOnTriggerMenuGrid.initMenuGrid();
-	specialMenuGrid.initMenuGrid();
-	specialAnimationMenuGrid.initMenuGrid();
-	specialIconMenuGrid.initMenuGrid();
-	specialDescriptionMenuGrid.initMenuGrid();
-	buffMenuGrid.initMenuGrid();
 }
 
 bool loadCharacterData(std::string dirName, characterData& charData)
@@ -974,236 +158,740 @@ int getSpriteNumFrames(const std::string spritePathStr)
 	return numFrames;
 }
 
-void loadCharacterDataButton()
+void resetCharData()
 {
-	std::shared_ptr<menuData> selectedMenuData;
-	holoCureMenuInterfacePtr->GetSelectedMenuData(MODNAME, selectedMenuData);
-	auto dirName = selectedMenuData->labelName;
-	characterData charData;
-	if (loadCharacterData(dirName, charData))
+	curCharIdx = -1;
+	loadedCharIdx = -1;
+	hasLoadedData = false;
+	showAttackAnimationWindow = false;
+	charList.clear();
+	for (const auto& dir : std::filesystem::directory_iterator("CharacterCreatorMod"))
 	{
-		std::string dirStr = "CharacterCreatorMod/" + dirName + "/";
-		holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, loadCharacterMenuGrid.menuGridPtr->prevMenu);
-		static_cast<menuDataTextBoxField*>(characterDataMenuCharName.get())->textField = charData.charName;
-		static_cast<menuDataImageField*>(portraitMenuPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.portraitFileName, charData.portraitFileName, 1));
-		static_cast<menuDataImageField*>(largePortraitMenuPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.largePortraitFileName, charData.largePortraitFileName, 1));
-
-		static_cast<menuDataImageField*>(idleAnimationMenuPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.idleAnimationFileName, charData.idleAnimationFileName, getSpriteNumFrames(charData.idleAnimationFileName)));
-		static_cast<menuDataImageField*>(idleAnimationMenuPreviewImage.get())->fps = charData.idleAnimationFPS.value;
-
-		static_cast<menuDataImageField*>(runAnimationMenuPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.runAnimationFileName, charData.runAnimationFileName, getSpriteNumFrames(charData.runAnimationFileName)));
-		static_cast<menuDataImageField*>(runAnimationMenuPreviewImage.get())->fps = charData.runAnimationFPS.value;
-		static_cast<menuDataNumberField*>(characterDataMenuHP.get())->textField = std::format("{}", charData.hp.value);
-		static_cast<menuDataNumberField*>(characterDataMenuATK.get())->textField = std::format("{}", charData.atk.value);
-		static_cast<menuDataNumberField*>(characterDataMenuSPD.get())->textField = std::format("{}", charData.spd.value);
-		static_cast<menuDataNumberField*>(characterDataMenuCrit.get())->textField = std::format("{}", charData.crit.value);
-		static_cast<menuDataImageField*>(weaponIconMenuIconPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.attackIconFileName, charData.attackIconFileName, 1));
-		static_cast<menuDataImageField*>(weaponAwakenedIconMenuIconPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.attackAwakenedIconFileName, charData.attackAwakenedIconFileName, 1));
-		static_cast<menuDataTextBoxField*>(weaponDataMenuWeaponName.get())->textField = charData.attackName;
-		if (charData.mainWeaponWeaponType.compare("Melee") == 0)
+		auto path = dir.path();
+		if (path.filename().string().compare(0, 5, "char_") == 0)
 		{
-			static_cast<menuDataSelection*>(weaponDataMenuWeaponType.get())->curSelectionTextIndex = 0;
-		}
-		else if (charData.mainWeaponWeaponType.compare("Multishot") == 0)
-		{
-			static_cast<menuDataSelection*>(weaponDataMenuWeaponType.get())->curSelectionTextIndex = 1;
-		}
-		else if (charData.mainWeaponWeaponType.compare("Ranged") == 0)
-		{
-			static_cast<menuDataSelection*>(weaponDataMenuWeaponType.get())->curSelectionTextIndex = 2;
-		}
-		static_cast<menuDataImageField*>(weaponAnimationMenuPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.attackAnimationFileName, charData.attackAnimationFileName, getSpriteNumFrames(charData.attackAnimationFileName)));
-		static_cast<menuDataImageField*>(weaponAnimationMenuPreviewImage.get())->fps = charData.attackAnimationFPS.value;
-		static_cast<menuDataNumberField*>(characterDataMenuSizeGrade.get())->textField = std::format("{}", charData.sizeGrade.value);
-		for (int i = 0; i < charData.weaponLevelDataList.size(); i++)
-		{
-			auto& curWeaponLevelData = charData.weaponLevelDataList[i];
-			static_cast<menuDataTextBoxField*>(weaponLevelDescriptionMenuList[i].get())->textField = curWeaponLevelData.attackDescription;
-			if (curWeaponLevelData.attackTime.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelAttackTimeMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.attackTime.value);
-			}
-			if (curWeaponLevelData.duration.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelDurationMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.duration.value);
-			}
-			if (curWeaponLevelData.damage.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelDamageMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.damage.value);
-			}
-			if (curWeaponLevelData.hitLimit.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelHitLimitMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.hitLimit.value);
-			}
-			if (curWeaponLevelData.speed.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelSpeedMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.speed.value);
-			}
-			if (curWeaponLevelData.hitCD.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelHitCDMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.hitCD.value);
-			}
-			if (curWeaponLevelData.attackCount.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelAttackCountMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.attackCount.value);
-			}
-			if (curWeaponLevelData.attackDelay.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelAttackDelayMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.attackDelay.value);
-			}
-			if (curWeaponLevelData.range.isDefined)
-			{
-				static_cast<menuDataNumberField*>(weaponLevelRangeMenuList[i].get())->textField = std::format("{}", curWeaponLevelData.range.value);
-			}
-		}
-		static_cast<menuDataImageField*>(specialIconMenuIconPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.specialIconFileName, charData.specialIconFileName, 1));
-		static_cast<menuDataNumberField*>(specialMenuSpecialCooldown.get())->textField = std::format("{}", charData.specialCooldown.value);
-		static_cast<menuDataTextBoxField*>(specialMenuSpecialName.get())->textField = charData.specialName;
-		static_cast<menuDataTextBoxField*>(specialDescriptionMenuSpecialDescription.get())->textField = charData.specialDescription;
-		static_cast<menuDataImageField*>(specialAnimationMenuPreviewImage.get())->fps = charData.specialAnimationFPS.value;
-		static_cast<menuDataImageField*>(specialAnimationMenuPreviewImage.get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.specialAnimationFileName, charData.specialAnimationFileName, getSpriteNumFrames(charData.specialAnimationFileName)));
-		static_cast<menuDataNumberField*>(specialMenuDamage.get())->textField = std::format("{}", charData.specialDamage.value);
-		static_cast<menuDataNumberField*>(specialMenuDuration.get())->textField = std::format("{}", charData.specialDuration.value);
-
-		for (auto& curBuffDataMenuGrid : buffMenuDeque)
-		{
-			holoCureMenuInterfacePtr->DeleteMenuGrid(MODNAME, curBuffDataMenuGrid.buffDataGrid->menuGridPtr);
-			holoCureMenuInterfacePtr->DeleteMenuGrid(MODNAME, curBuffDataMenuGrid.buffIconGrid->menuGridPtr);
-		}
-
-		buffMenuDeque.clear();
-
-		for (int i = 0; i < charData.buffDataList.size(); i++)
-		{
-			auto& curBuffData = charData.buffDataList[i];
-			addBuffMenuButton();
-			auto& curBuffDataGrid = buffMenuDeque[i].buffDataGrid;
-			auto& curBuffIconGrid = buffMenuDeque[i].buffIconGrid;
-			static_cast<menuDataTextBoxField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[0].get())->textField = curBuffData.buffName;
-			if (curBuffData.levels[0].attackIncrement.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[1].get())->textField = std::format("{}", curBuffData.levels[0].attackIncrement.value);
-			}
-			if (curBuffData.levels[0].critIncrement.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[2].get())->textField = std::format("{}", curBuffData.levels[0].critIncrement.value);
-			}
-			if (curBuffData.levels[0].hasteIncrement.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[3].get())->textField = std::format("{}", curBuffData.levels[0].hasteIncrement.value);
-			}
-			if (curBuffData.levels[0].speedIncrement.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[4].get())->textField = std::format("{}", curBuffData.levels[0].speedIncrement.value);
-			}
-			if (curBuffData.levels[0].DRMultiplier.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[5].get())->textField = std::format("{}", curBuffData.levels[0].DRMultiplier.value);
-			}
-			if (curBuffData.levels[0].healMultiplier.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[6].get())->textField = std::format("{}", curBuffData.levels[0].healMultiplier.value);
-			}
-			if (curBuffData.levels[0].food.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[7].get())->textField = std::format("{}", curBuffData.levels[0].food.value);
-			}
-			if (curBuffData.levels[0].weaponSize.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[8].get())->textField = std::format("{}", curBuffData.levels[0].weaponSize.value);
-			}
-			if (curBuffData.levels[0].maxStacks.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[0].menuDataPtrList[9].get())->textField = std::format("{}", curBuffData.levels[0].maxStacks.value);
-			}
-			if (curBuffData.levels[0].timer.isDefined)
-			{
-				static_cast<menuDataNumberField*>(curBuffDataGrid->menuColumnList[1].menuDataPtrList[0].get())->textField = std::format("{}", curBuffData.levels[0].timer.value);
-			}
-			static_cast<menuDataImageField*>(curBuffIconGrid->menuColumnList[1].menuDataPtrList[0].get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + curBuffData.buffIconFileName, curBuffData.buffIconFileName, 1));
-		}
-		reloadBuffs();
-
-		for (int i = 0; i < charData.skillDataList.size(); i++)
-		{
-			auto& curSkillData = charData.skillDataList[i];
-			for (int j = 0; j < 3; j++)
-			{
-				auto& curSkillLevelData = curSkillData.skillLevelDataList[j];
-				if (curSkillLevelData.attackIncrement.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuAttackButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.attackIncrement.value);
-				}
-				if (curSkillLevelData.critIncrement.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuCritButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.critIncrement.value);
-				}
-				if (curSkillLevelData.hasteIncrement.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuHasteButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.hasteIncrement.value);
-				}
-				if (curSkillLevelData.speedIncrement.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuSpeedButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.speedIncrement.value);
-				}
-				if (curSkillLevelData.DRMultiplier.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuDRButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.DRMultiplier.value);
-				}
-				if (curSkillLevelData.healMultiplier.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuHealMultiplierButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.healMultiplier.value);
-				}
-				if (curSkillLevelData.food.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuFoodButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.food.value);
-				}
-				if (curSkillLevelData.weaponSize.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillsDataLevelMenuWeaponSizeMultiplierButtonList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.weaponSize.value);
-				}
-				static_cast<menuDataTextBoxField*>(skillDataLevelDescriptionMenuList[i * 3 + j].get())->textField = curSkillLevelData.skillDescription;
-				for (int buffIndex = 0; buffIndex < static_cast<menuDataSelection*>(skillOnTriggerBuffSelectionMenuList[i * 3 + j].get())->selectionText.size(); buffIndex++)
-				{
-					if (static_cast<menuDataSelection*>(skillOnTriggerBuffSelectionMenuList[i * 3 + j].get())->selectionText[buffIndex].compare(curSkillLevelData.skillOnTriggerData.buffName) == 0)
-					{
-						static_cast<menuDataSelection*>(skillOnTriggerBuffSelectionMenuList[i * 3 + j].get())->curSelectionTextIndex = buffIndex;
-						break;
-					}
-				}
-				for (int buffIndex = 0; buffIndex < static_cast<menuDataSelection*>(skillOnTriggerTypeSelectionMenuList[i * 3 + j].get())->selectionText.size(); buffIndex++)
-				{
-					if (static_cast<menuDataSelection*>(skillOnTriggerTypeSelectionMenuList[i * 3 + j].get())->selectionText[buffIndex].compare(curSkillLevelData.skillOnTriggerData.onTriggerType) == 0)
-					{
-						static_cast<menuDataSelection*>(skillOnTriggerTypeSelectionMenuList[i * 3 + j].get())->curSelectionTextIndex = buffIndex;
-						break;
-					}
-				}
-				if (curSkillLevelData.skillOnTriggerData.probability.isDefined)
-				{
-					static_cast<menuDataNumberField*>(skillOnTriggerProbabilityMenuList[i * 3 + j].get())->textField = std::format("{}", curSkillLevelData.skillOnTriggerData.probability.value);
-				}
-			}
-
-			static_cast<menuDataTextBoxField*>(skillsDataMenuNameList[i].get())->textField = curSkillData.skillName;
-			static_cast<menuDataImageField*>(skillIconMenuIconPreviewImageList[i].get())->curSprite = std::shared_ptr<spriteData>(new spriteData(dirStr + curSkillData.skillIconFileName, curSkillData.skillIconFileName, 1));
+			charList.push_back(path.filename().string());
 		}
 	}
 }
 
-void reloadLoadCharacter()
+void resetAttackAnimationData()
 {
-	auto& menuDataList = loadCharacterMenuGrid.menuColumnList[0].menuDataPtrList;
-	for (size_t i = 0; i < menuDataList.size() - 2; i++)
+	isAttackAnimationPlaying = false;
+}
+
+void reloadImageData()
+{
+	imageList.clear();
+	if (std::filesystem::exists("CharacterCreatorMod/char_" + curCharData.charName))
 	{
-		menuDataList[i]->labelName = "";
-		menuDataList[i]->isVisible = false;
+		for (const auto& dir : std::filesystem::directory_iterator("CharacterCreatorMod/char_" + curCharData.charName))
+		{
+			auto path = dir.path();
+			if (path.extension().string().compare(".png") == 0)
+			{
+				imageList.push_back(path.filename().string());
+			}
+		}
 	}
-	for (int i = 0; i < 8 && loadCharacterPage * 8 + i < loadCharacterDeque.size(); i++)
+}
+
+void addImageSelector(std::string name, std::string& fileName, ID3D11ShaderResourceView** texture, int& width, int& height,
+						bool isAnimation = false, double* curFrame = nullptr, int* numFrames = nullptr, JSONInt* fps = nullptr, bool* isPlaying = nullptr)
+{
+	// If no texture is loaded and the fileName is not an empty string, try to load the fileName image.
+	// If it fails, then set the fileName to an empty string to prevent it from trying to load again
+	if ((*texture) == NULL && !fileName.empty())
 	{
-		auto& menuData = menuDataList[i];
-		menuData->labelName = loadCharacterDeque[loadCharacterPage * 8 + i];
-		menuData->isVisible = true;
+		bool hasFoundFileName = false;
+		for (int i = 0; i < imageList.size(); i++)
+		{
+			if (fileName.compare(imageList[i]) == 0)
+			{
+				hasFoundFileName = true;
+				if (isAnimation && numFrames != nullptr)
+				{
+					*numFrames = getSpriteNumFrames(fileName);
+				}
+				bool ret = LoadTextureFromFile(("CharacterCreatorMod/char_" + curCharData.charName + "/" + fileName).c_str(), texture, &width, &height);
+				IM_ASSERT(ret);
+				break;
+			}
+		}
+		if (!hasFoundFileName)
+		{
+			fileName = "";
+		}
+	}
+	ImGui::Text("%s", name.c_str());
+	if (ImGui::BeginCombo(("##" + name + "Combo").c_str(), fileName.c_str()))
+	{
+		bool hasSelected = false;
+		for (int i = 0; i < imageList.size(); i++)
+		{
+			if (ImGui::Selectable((imageList[i] + "##" + fileName + std::to_string(i)).c_str(), fileName.compare(imageList[i]) == 0))
+			{
+				fileName = imageList[i];
+				hasSelected = true;
+			}
+		}
+		if (hasSelected)
+		{
+			if ((*texture) != NULL)
+			{
+				(*texture)->Release();
+				(*texture) = NULL;
+			}
+			if (isAnimation && numFrames != nullptr)
+			{
+				*numFrames = getSpriteNumFrames(fileName);
+			}
+			bool ret = LoadTextureFromFile(("CharacterCreatorMod/char_" + curCharData.charName + "/" + fileName).c_str(), texture, &width, &height);
+			IM_ASSERT(ret);
+		}
+
+		ImGui::EndCombo();
+	}
+
+	if ((*texture) != NULL)
+	{
+		if (!isAnimation)
+		{
+			ImGui::Image((ImTextureID)(intptr_t)(*texture), ImVec2(static_cast<float>(width), static_cast<float>(height)), ImVec2(0, 0), ImVec2(1, 1));
+		}
+		else if (numFrames != nullptr && curFrame != nullptr && isPlaying != nullptr)
+		{
+			float size = 1.0f / *numFrames;
+			float startU = static_cast<int>(*curFrame) * size;
+			ImGui::Image((ImTextureID)(intptr_t)(*texture), ImVec2(static_cast<float>(width / *numFrames), static_cast<float>(height)), ImVec2(startU, 0), ImVec2(startU + size, 1));
+			if (*isPlaying)
+			{
+				*curFrame += fps->value / 60.0f;
+			}
+			if (*curFrame >= *numFrames)
+			{
+				*curFrame = 0;
+			}
+			fps->isDefined |= ImGui::InputInt((name + "FPS").c_str(), &fps->value);
+			if (ImGui::Button(("Toggle Play/Pause##" + name).c_str()))
+			{
+				*isPlaying = !*isPlaying;
+			}
+		}
+	}
+
+}
+
+void handleAttackAnimationWindow()
+{
+	ImGui::Begin("Attack Animation");
+
+	ImGui::InputText("attackName", &curCharData.attackName);
+
+	addImageSelector("attackAnimation", curCharData.attackAnimationFileName, &attackAnimationTexture, attackAnimationWidth, attackAnimationHeight,
+		true, &attackAnimationCurFrame, &attackAnimationNumFrames, &curCharData.attackAnimationFPS, &isAttackAnimationPlaying);
+
+	ImGui::End();
+}
+
+void handleBuffDataWindow()
+{
+	ImGui::Begin("Buff Data");
+
+	if (ImGui::Button("Add Buff Data"))
+	{
+		buffData newBuffData;
+		newBuffData.buffName = "newBuff";
+		newBuffData.levels.push_back(buffLevelData());
+		curCharData.buffDataList.push_back(newBuffData);
+	}
+
+	const char* buffDataComboPreview = "";
+	if (curBuffDataIdx >= 0 && curBuffDataIdx < curCharData.buffDataList.size())
+	{
+		buffDataComboPreview = curCharData.buffDataList[curBuffDataIdx].buffName.c_str();
+	}
+
+	if (ImGui::BeginCombo("##BuffDataCombo", buffDataComboPreview))
+	{
+		for (int i = 0; i < curCharData.buffDataList.size(); i++)
+		{
+			if (ImGui::Selectable((curCharData.buffDataList[i].buffName + "##" + std::to_string(i)).c_str(), i == curBuffDataIdx))
+			{
+				curBuffDataIdx = i;
+				auto& curBuffData = curCharData.buffDataList[curBuffDataIdx];
+				if (buffIconTexture != NULL)
+				{
+					buffIconTexture->Release();
+					buffIconTexture = NULL;
+				}
+				bool ret = LoadTextureFromFile(("CharacterCreatorMod/char_" + curCharData.charName + "/" + curBuffData.buffIconFileName).c_str(), &buffIconTexture, &buffIconWidth, &buffIconHeight);
+				IM_ASSERT(ret);
+			}
+		}
+		ImGui::EndCombo();
+	}
+
+	if (curBuffDataIdx >= 0 && curBuffDataIdx < curCharData.buffDataList.size())
+	{
+		auto& curBuffData = curCharData.buffDataList[curBuffDataIdx];
+		ImGui::InputText("buffName", &curBuffData.buffName);
+
+		curBuffData.levels[0].DRMultiplier.isDefined |= ImGui::InputDouble("DR", &curBuffData.levels[0].DRMultiplier.value);
+		curBuffData.levels[0].attackIncrement.isDefined |= ImGui::InputInt("attackIncrement", &curBuffData.levels[0].attackIncrement.value);
+		curBuffData.levels[0].critIncrement.isDefined |= ImGui::InputInt("critIncrement", &curBuffData.levels[0].critIncrement.value);
+		curBuffData.levels[0].food.isDefined |= ImGui::InputDouble("food", &curBuffData.levels[0].food.value);
+		curBuffData.levels[0].hasteIncrement.isDefined |= ImGui::InputInt("hasteIncrement", &curBuffData.levels[0].hasteIncrement.value);
+		curBuffData.levels[0].healMultiplier.isDefined |= ImGui::InputDouble("healMultiplier", &curBuffData.levels[0].healMultiplier.value);
+		curBuffData.levels[0].maxStacks.isDefined |= ImGui::InputInt("maxStacks", &curBuffData.levels[0].maxStacks.value);
+		curBuffData.levels[0].speedIncrement.isDefined |= ImGui::InputInt("speedIncrement", &curBuffData.levels[0].speedIncrement.value);
+		curBuffData.levels[0].timer.isDefined |= ImGui::InputInt("timer", &curBuffData.levels[0].timer.value);
+		curBuffData.levels[0].weaponSize.isDefined |= ImGui::InputDouble("weaponSize", &curBuffData.levels[0].weaponSize.value);
+		
+		addImageSelector("buffIcon", curBuffData.buffIconFileName, &buffIconTexture, buffIconWidth, buffIconHeight,
+			false, nullptr, nullptr, nullptr, nullptr);
+
+		if (ImGui::Button("Delete Buff"))
+		{
+			curCharData.buffDataList.erase(curCharData.buffDataList.begin() + curBuffDataIdx);
+			curBuffDataIdx = -1;
+			if (buffIconTexture != NULL)
+			{
+				buffIconTexture->Release();
+				buffIconTexture = NULL;
+			}
+		}
+	}
+
+	ImGui::End();
+}
+
+void handleIdleAnimationWindow()
+{
+	ImGui::Begin("Idle Animation");
+
+	addImageSelector("idleAnimation", curCharData.idleAnimationFileName, &idleAnimationTexture, idleAnimationWidth, idleAnimationHeight,
+		true, &idleAnimationCurFrame, &idleAnimationNumFrames, &curCharData.idleAnimationFPS, &isIdleAnimationPlaying);
+
+	ImGui::End();
+}
+
+void handleRunAnimationWindow()
+{
+	ImGui::Begin("Run Animation");
+
+	addImageSelector("runAnimation", curCharData.runAnimationFileName, &runAnimationTexture, runAnimationWidth, runAnimationHeight,
+		true, &runAnimationCurFrame, &runAnimationNumFrames, &curCharData.runAnimationFPS, &isRunAnimationPlaying);
+
+	ImGui::End();
+}
+
+void handlePortraitWindow()
+{
+	ImGui::Begin("Portrait");
+
+	addImageSelector("portrait", curCharData.portraitFileName, &portraitIconTexture, portraitIconWidth, portraitIconHeight,
+		false, nullptr, nullptr, nullptr, nullptr);
+
+	ImGui::End();
+}
+
+void handleLargePortraitWindow()
+{
+	ImGui::Begin("Large Portrait");
+
+	addImageSelector("large portrait", curCharData.largePortraitFileName, &largePortraitIconTexture, largePortraitIconWidth, largePortraitIconHeight,
+		false, nullptr, nullptr, nullptr, nullptr);
+
+	ImGui::End();
+}
+
+void handleSpecialAnimationWindow()
+{
+	ImGui::Begin("Special Animation");
+
+	ImGui::InputText("specialName", &curCharData.specialName);
+	ImGui::InputTextMultiline("specialDescription", &curCharData.specialDescription);
+	curCharData.specialCooldown.isDefined |= ImGui::InputInt("specialCooldown", &curCharData.specialCooldown.value);
+	curCharData.specialDamage.isDefined |= ImGui::InputDouble("specialDamage", &curCharData.specialDamage.value);
+	curCharData.specialDuration.isDefined |= ImGui::InputInt("specialDuration", &curCharData.specialDuration.value);
+
+	addImageSelector("specialIcon", curCharData.specialIconFileName, &specialIconTexture, specialIconWidth, specialIconHeight,
+		false, nullptr, nullptr, nullptr, nullptr);
+
+	addImageSelector("specialAnimation", curCharData.specialAnimationFileName, &specialAnimationTexture, specialAnimationWidth, specialAnimationHeight,
+		true, &specialAnimationCurFrame, &specialAnimationNumFrames, &curCharData.specialAnimationFPS, &isSpecialAnimationPlaying);
+
+	ImGui::End();
+}
+
+void handleProjectileOnTrigger(std::vector<projectileActionData>& projectileActionList)
+{
+	if (ImGui::Button("Add On Trigger"))
+	{
+		projectileActionData curProjectileActionData;
+		curProjectileActionData.projectileActionName = "newOnTrigger";
+		curProjectileActionData.projectileActionTriggerType = projectileActionTriggerType_NONE;
+		projectileActionList.push_back(curProjectileActionData);
+	}
+	for (int j = 0; j < projectileActionList.size(); j++)
+	{
+		auto& curProjectileActionData = projectileActionList[j];
+		if (ImGui::TreeNode((void*)(intptr_t)j, curProjectileActionData.projectileActionName.c_str()))
+		{
+			ImGui::InputText("projectileActionName", &curProjectileActionData.projectileActionName);
+			if (ImGui::BeginCombo("projectileActionTriggerType", projectileActionTriggerTypeMap[curProjectileActionData.projectileActionTriggerType].c_str()))
+			{
+				for (const auto& [key, value] : projectileActionTriggerTypeMap)
+				{
+					bool isSelectable = key == curProjectileActionData.projectileActionTriggerType;
+					if (ImGui::Selectable(value.c_str(), isSelectable))
+					{
+						curProjectileActionData.projectileActionTriggerType = key;
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+			if (curProjectileActionData.projectileActionTriggerType != projectileActionTriggerType_NONE)
+			{
+				if (ImGui::BeginCombo("triggeredActionName", curProjectileActionData.triggeredActionName.c_str()))
+				{
+					for (int k = 0; k < curCharData.actionDataList.size(); k++)
+					{
+						const bool is_selected = (curProjectileActionData.triggeredActionName.compare(curCharData.actionDataList[k].actionName) == 0);
+						if (ImGui::Selectable(curCharData.actionDataList[k].actionName.c_str(), is_selected))
+						{
+							curProjectileActionData.triggeredActionName = curCharData.actionDataList[k].actionName;
+						}
+					}
+					ImGui::EndCombo();
+				}
+			}
+
+			if (ImGui::Button("Delete onTrigger"))
+			{
+				projectileActionList.erase(projectileActionList.begin() + j);
+				j--;
+			}
+			ImGui::TreePop();
+		}
+	}
+}
+
+void handleWeaponLevelsWindow()
+{
+	ImGui::Begin("Weapon Levels");
+
+	for (int i = 0; i < curCharData.weaponLevelDataList.size(); i++)
+	{
+		std::string strLevel = "Weapon Level " + std::to_string(i + 1);
+		if (ImGui::TreeNode(strLevel.c_str()))
+		{
+			auto& curWeaponLevelData = curCharData.weaponLevelDataList[i];
+			// TODO: Probably need a disable option to not input anything?
+			curWeaponLevelData.attackCount.isDefined |= ImGui::InputInt(("attackCount##" + strLevel).c_str(), &curWeaponLevelData.attackCount.value);
+			curWeaponLevelData.attackDelay.isDefined |= ImGui::InputInt(("attackDelay##" + strLevel).c_str(), &curWeaponLevelData.attackDelay.value);
+			ImGui::InputText(("attackDescription##" + strLevel).c_str(), &curWeaponLevelData.attackDescription);
+			curWeaponLevelData.attackTime.isDefined |= ImGui::InputInt(("attackTime##" + strLevel).c_str(), &curWeaponLevelData.attackTime.value);
+			curWeaponLevelData.damage.isDefined |= ImGui::InputDouble(("damage##" + strLevel).c_str(), &curWeaponLevelData.damage.value);
+			curWeaponLevelData.duration.isDefined |= ImGui::InputInt(("duration##" + strLevel).c_str(), &curWeaponLevelData.duration.value);
+			curWeaponLevelData.hitCD.isDefined |= ImGui::InputInt(("hitCD##" + strLevel).c_str(), &curWeaponLevelData.hitCD.value);
+			curWeaponLevelData.hitLimit.isDefined |= ImGui::InputInt(("hitLimit##" + strLevel).c_str(), &curWeaponLevelData.hitLimit.value);
+			curWeaponLevelData.range.isDefined |= ImGui::InputInt(("range##" + strLevel).c_str(), &curWeaponLevelData.range.value);
+			curWeaponLevelData.speed.isDefined |= ImGui::InputDouble(("speed##" + strLevel).c_str(), &curWeaponLevelData.speed.value);
+
+			handleProjectileOnTrigger(curWeaponLevelData.projectileActionList);
+
+			ImGui::TreePop();
+		}
+	}
+
+	ImGui::End();
+}
+
+void handleSkillDataWindow()
+{
+	ImGui::Begin("Skill Data");
+	
+	for (int i = 0; i < curCharData.skillDataList.size(); i++)
+	{
+		std::string strLevel = "Skill " + std::to_string(i + 1);
+		if (ImGui::TreeNode(strLevel.c_str()))
+		{
+			auto& curSkillData = curCharData.skillDataList[i];
+			ImGui::InputText(("skillName##" + strLevel).c_str(), &curSkillData.skillName);
+			for (int j = 0; j < curSkillData.skillLevelDataList.size(); j++)
+			{
+				if (ImGui::TreeNode(("Level " + std::to_string(j + 1) + "##" + strLevel).c_str()))
+				{
+					auto& curSkillLevel = curSkillData.skillLevelDataList[j];
+					std::string skillLevel = "##" + strLevel + " Level " + std::to_string(j + 1);
+					curSkillLevel.DRMultiplier.isDefined |= ImGui::InputDouble(("DRMMultiplier" + skillLevel).c_str(), &curSkillLevel.DRMultiplier.value);
+					curSkillLevel.healMultiplier.isDefined |= ImGui::InputDouble(("healMultiplier" + skillLevel).c_str(), &curSkillLevel.healMultiplier.value);
+					curSkillLevel.attackIncrement.isDefined |= ImGui::InputInt(("attackIncrement" + skillLevel).c_str(), &curSkillLevel.attackIncrement.value);
+					curSkillLevel.critIncrement.isDefined |= ImGui::InputInt(("critIncrement" + skillLevel).c_str(), &curSkillLevel.critIncrement.value);
+					curSkillLevel.hasteIncrement.isDefined |= ImGui::InputInt(("hasteIncrement" + skillLevel).c_str(), &curSkillLevel.hasteIncrement.value);
+					curSkillLevel.speedIncrement.isDefined |= ImGui::InputInt(("speedIncrement" + skillLevel).c_str(), &curSkillLevel.speedIncrement.value);
+					curSkillLevel.food.isDefined |= ImGui::InputDouble(("food" + skillLevel).c_str(), &curSkillLevel.food.value);
+					curSkillLevel.weaponSize.isDefined |= ImGui::InputDouble(("weaponSize" + skillLevel).c_str(), &curSkillLevel.weaponSize.value);
+					if (ImGui::TreeNode(("onTrigger" + skillLevel).c_str()))
+					{	
+						auto& curOnTriggerData = curSkillLevel.skillOnTriggerData;
+						if (ImGui::BeginCombo(("buffName" + skillLevel).c_str(), curOnTriggerData.buffName.c_str()))
+						{
+							for (int k = 0; k < curCharData.buffDataList.size(); k++)
+							{
+								const bool is_selected = (curOnTriggerData.buffName.compare(curCharData.buffDataList[k].buffName) == 0);
+								if (ImGui::Selectable(curCharData.buffDataList[k].buffName.c_str(), is_selected))
+								{
+									curOnTriggerData.buffName = curCharData.buffDataList[k].buffName;
+								}
+							}
+							ImGui::EndCombo();
+						}
+						curOnTriggerData.probability.isDefined |= ImGui::InputInt(("probability" + skillLevel).c_str(), &curOnTriggerData.probability.value);
+						if (ImGui::BeginCombo(("onTriggerType" + skillLevel).c_str(), curOnTriggerData.onTriggerType.c_str()))
+						{
+							const char* items[] = { "NONE", "onDebuff", "onAttackCreate", "onCriticalHit", "onHeal", "onKill", "onTakeDamage", "onDodge" };
+							for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+							{
+								const bool is_selected = (curOnTriggerData.onTriggerType.compare(items[n]) == 0);
+								if (ImGui::Selectable(items[n], is_selected))
+								{
+									curOnTriggerData.onTriggerType = items[n];
+								}
+							}
+							ImGui::EndCombo();
+						}
+						ImGui::TreePop();
+					}
+					ImGui::InputTextMultiline(("skillDescription" + skillLevel).c_str(), &curSkillLevel.skillDescription);
+					ImGui::TreePop();
+				}
+			}
+
+			auto& curSkillIconTextureData = curSkillData.skillIconTextureData;
+			addImageSelector("skillIcon", curSkillData.skillIconFileName, &curSkillIconTextureData.texture, curSkillIconTextureData.width, curSkillIconTextureData.height,
+				false, nullptr, nullptr, nullptr, nullptr);
+
+			ImGui::TreePop();
+		}
+	}
+
+	ImGui::End();
+}
+
+void handleActionDataWindow()
+{
+	ImGui::Begin("Action Data");
+	
+	if (ImGui::Button("Add Action##action"))
+	{
+		actionData newActionData;
+		newActionData.actionName = "newAction";
+		newActionData.actionType = actionType_NONE;
+		curCharData.actionDataList.push_back(newActionData);
+	}
+
+	for (int i = 0; i < curCharData.actionDataList.size(); i++)
+	{
+		std::string strAppendActionNumber = "##action" + std::to_string(i);
+		if (ImGui::TreeNode((void*)(intptr_t)i, curCharData.actionDataList[i].actionName.c_str()))
+		{
+			ImGui::InputText(("actionName" + strAppendActionNumber).c_str(), &curCharData.actionDataList[i].actionName);
+			if (ImGui::BeginCombo(("actionType" + strAppendActionNumber).c_str(), actionTypeMap[curCharData.actionDataList[i].actionType].c_str()))
+			{
+				for (const auto& [key, value] : actionTypeMap)
+				{
+					const bool is_selected = curCharData.actionDataList[i].actionType == key;
+					if (ImGui::Selectable(value.c_str(), is_selected))
+					{
+						curCharData.actionDataList[i].actionType = key;
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+			if (curCharData.actionDataList[i].actionType == actionType_SpawnProjectile)
+			{
+				auto& curActionProjectileData = curCharData.actionDataList[i].actionProjectileData;
+				curActionProjectileData.relativeSpawnPosX.isDefined |= ImGui::InputDouble(("relativeSpawnPosX" + strAppendActionNumber).c_str(), &curActionProjectileData.relativeSpawnPosX.value);
+				curActionProjectileData.relativeSpawnPosY.isDefined |= ImGui::InputDouble(("relativeSpawnPosY" + strAppendActionNumber).c_str(), &curActionProjectileData.relativeSpawnPosY.value);
+				curActionProjectileData.spawnDir.isDefined |= ImGui::InputDouble(("spawnDir" + strAppendActionNumber).c_str(), &curActionProjectileData.spawnDir.value);
+				ImGui::Checkbox("Is Absolute Spawn Dir", &curActionProjectileData.isAbsoluteSpawnDir);
+				if (ImGui::BeginCombo(("projectileDataName" + strAppendActionNumber).c_str(), curActionProjectileData.projectileDataName.c_str()))
+				{
+					for (int k = 0; k < curCharData.projectileDataList.size(); k++)
+					{
+						const bool is_selected = (curActionProjectileData.projectileDataName.compare(curCharData.projectileDataList[k].projectileName) == 0);
+						if (ImGui::Selectable(curCharData.projectileDataList[k].projectileName.c_str(), is_selected))
+						{
+							curActionProjectileData.projectileDataName = curCharData.projectileDataList[k].projectileName;
+						}
+					}
+					ImGui::EndCombo();
+				}
+			}
+			
+			if (ImGui::Button(("Delete action" + strAppendActionNumber).c_str()))
+			{
+				curCharData.actionDataList.erase(curCharData.actionDataList.begin() + i);
+				i--;
+			}
+
+			// TODO: add code to add to next action list
+			ImGui::TreePop();
+		}
+	}
+
+	ImGui::End();
+}
+
+void handleProjectileWindow()
+{
+	ImGui::Begin("Projectile Data");
+
+	if (ImGui::Button("Add projectile"))
+	{
+		projectileData newProjectileData;
+		newProjectileData.projectileName = "newProjectile";
+		curCharData.projectileDataList.push_back(newProjectileData);
+	}
+
+	for (int i = 0; i < curCharData.projectileDataList.size(); i++)
+	{
+		std::string strAppendProjectileNumber = "##projectile" + std::to_string(i);
+		if (ImGui::TreeNode((void*)(intptr_t)i, curCharData.projectileDataList[i].projectileName.c_str()))
+		{
+			auto& curProjectileData = curCharData.projectileDataList[i];
+			ImGui::InputText(("projectileName" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileName);
+			curProjectileData.projectileDamage.isDefined |= ImGui::InputDouble(("projectileDamage" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileDamage.value);
+			curProjectileData.projectileDuration.isDefined |= ImGui::InputInt(("projectileDuration" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileDuration.value);
+			curProjectileData.projectileHitCD.isDefined |= ImGui::InputInt(("projectileHitCD" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileHitCD.value);
+			curProjectileData.projectileHitLimit.isDefined |= ImGui::InputInt(("projectileHitLimit" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileHitLimit.value);
+			curProjectileData.projectileHitRange.isDefined |= ImGui::InputInt(("projectileHitRange" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileHitRange.value);
+			curProjectileData.projectileSpeed.isDefined |= ImGui::InputDouble(("projectileSpeed" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileSpeed.value);
+			
+			handleProjectileOnTrigger(curProjectileData.projectileActionList);
+
+			auto& curProjectileAnimationTextureData = curProjectileData.projectileAnimationTextureData;
+
+			addImageSelector("projectileAnimation", curProjectileData.projectileAnimationFileName, &curProjectileAnimationTextureData.texture, curProjectileAnimationTextureData.width, curProjectileAnimationTextureData.height,
+				true, &curProjectileAnimationTextureData.curFrame, &curProjectileAnimationTextureData.numFrames, &curProjectileData.projectileAnimationFPS, &curProjectileAnimationTextureData.isAnimationPlaying);
+			if (ImGui::Button(("Delete projectile" + strAppendProjectileNumber).c_str()))
+			{
+				if (curProjectileAnimationTextureData.texture != NULL)
+				{
+					curProjectileAnimationTextureData.texture->Release();
+				}
+				curCharData.projectileDataList.erase(curCharData.projectileDataList.begin() + i);
+				i--;
+			}
+			ImGui::TreePop();
+		}
+	}
+
+	ImGui::End();
+}
+
+void handleImGUI()
+{
+	ImGui::Begin("Character List");
+
+	if (ImGui::Button("Reload Character List"))
+	{
+		if (!std::filesystem::exists("CharacterCreatorMod"))
+		{
+			callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find the CharacterCreatorMod directory");
+			g_ModuleInterface->Print(CM_RED, "Couldn't find the CharacterCreatorMod directory");
+		}
+		else
+		{
+			resetCharData();
+		}
+	}
+
+	// TODO: Need to add character button?
+
+	if (ImGui::BeginListBox("##CharListBox"))
+	{
+		for (int i = 0; i < charList.size(); i++)
+		{
+			bool isSelected = false;
+			if (ImGui::Selectable((charList[i] + "##" + std::to_string(i)).c_str(), i == curCharIdx))
+			{
+				curCharIdx = i;
+			}
+		}
+		ImGui::EndListBox();
+	}
+
+	ImGui::End();
+
+	if (!charList.empty() && curCharIdx >= 0 && curCharIdx < charList.size())
+	{
+		ImGui::Begin("Character Data");
+		if (curCharIdx != loadedCharIdx)
+		{
+			hasLoadedData = loadCharacterData(charList[curCharIdx], curCharData);
+			loadedCharIdx = curCharIdx;
+			reloadImageData();
+			resetAttackAnimationData();
+			bool ret = LoadTextureFromFile(("CharacterCreatorMod/char_" + curCharData.charName + "/" + curCharData.attackAnimationFileName).c_str(), &attackAnimationTexture, &attackAnimationWidth, &attackAnimationHeight);
+			IM_ASSERT(ret);
+			attackAnimationNumFrames = getSpriteNumFrames(curCharData.attackAnimationFileName);
+			curBuffDataIdx = -1;
+		}
+
+		if (!hasLoadedData)
+		{
+			ImGui::TextColored(ImVec4(1, 0, 0, 1), "FAILED TO LOAD DATA");
+		}
+		else
+		{
+			if (ImGui::Button("Save Data"))
+			{
+				ImGui::SameLine();
+				if (!charList.empty() && loadedCharIdx >= 0 && loadedCharIdx < charList.size())
+				{
+					CreateDirectory(L"CharacterCreatorMod", NULL);
+					std::string charDirName = "CharacterCreatorMod/" + charList[loadedCharIdx];
+					CreateDirectoryA(charDirName.c_str(), NULL);
+					nlohmann::json outputJSON = curCharData;
+
+					std::ofstream outFile;
+					outFile.open(charDirName + "/charData.json");
+					outFile << std::setw(4) << outputJSON << "\n";
+					outFile.close();
+					ImGui::TextColored(ImVec4(0, 1, 0, 1), "Saved to %s", charDirName.c_str());
+				}
+				else
+				{
+					ImGui::TextColored(ImVec4(1, 0, 0, 1), "FAILED TO SAVE DATA");
+				}
+			}
+			ImGui::InputText("charName", &curCharData.charName);
+			curCharData.atk.isDefined |= ImGui::InputDouble("ATK", &curCharData.atk.value);
+			curCharData.crit.isDefined |= ImGui::InputDouble("CRIT", &curCharData.crit.value);
+			curCharData.hp.isDefined |= ImGui::InputDouble("HP", &curCharData.hp.value);
+			curCharData.spd.isDefined |= ImGui::InputDouble("SPD", &curCharData.hp.value);
+			curCharData.sizeGrade.isDefined |= ImGui::SliderInt("sizeGrade", &curCharData.sizeGrade.value, 0, 4);
+			if (ImGui::BeginCombo("weaponType", curCharData.mainWeaponWeaponType.c_str()))
+			{
+				const char* items[] = { "Melee", "Ranged", "Multishot" };
+				for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+				{
+					const bool is_selected = (curCharData.mainWeaponWeaponType.compare(items[n]) == 0);
+					if (ImGui::Selectable(items[n], is_selected))
+					{
+						curCharData.mainWeaponWeaponType = items[n];
+					}
+				}
+				ImGui::EndCombo();
+			}
+			if (ImGui::Button("Toggle Attack Animation Window"))
+			{
+				showAttackAnimationWindow = !showAttackAnimationWindow;
+			}
+			if (ImGui::Button("Toggle Buff Data Window"))
+			{
+				showBuffDataWindow = !showBuffDataWindow;
+			}
+			if (ImGui::Button("Toggle Idle Animation Data Window"))
+			{
+				showIdleAnimationWindow = !showIdleAnimationWindow;
+			}
+			if (ImGui::Button("Toggle Run Animation Data Window"))
+			{
+				showRunAnimationWindow = !showRunAnimationWindow;
+			}
+			if (ImGui::Button("Toggle Portrait Window"))
+			{
+				showPortraitWindow = !showPortraitWindow;
+			}
+			if (ImGui::Button("Toggle Large Portrait Window"))
+			{
+				showLargePortraitWindow = !showLargePortraitWindow;
+			}
+			if (ImGui::Button("Toggle Special Animation Data Window"))
+			{
+				showSpecialAnimationWindow = !showSpecialAnimationWindow;
+			}
+			if (ImGui::Button("Toggle Weapon Levels Window"))
+			{
+				showWeaponLevelsWindow = !showWeaponLevelsWindow;
+			}
+			if (ImGui::Button("Toggle Skill Data Window"))
+			{
+				showSkillDataWindow = !showSkillDataWindow;
+			}
+			if (ImGui::Button("Toggle Action Data Window"))
+			{
+				showActionDataWindow = !showActionDataWindow;
+			}
+			if (ImGui::Button("Toggle Projectile Data Window"))
+			{
+				showProjectileDataWindow = !showProjectileDataWindow;
+			}
+		}
+
+		ImGui::End();
+
+		if (showAttackAnimationWindow)
+		{
+			handleAttackAnimationWindow();
+		}
+		
+		if (showBuffDataWindow)
+		{
+			handleBuffDataWindow();
+		}
+
+		if (showIdleAnimationWindow)
+		{
+			handleIdleAnimationWindow();
+		}
+
+		if (showRunAnimationWindow)
+		{
+			handleRunAnimationWindow();
+		}
+
+		if (showPortraitWindow)
+		{
+			handlePortraitWindow();
+		}
+
+		if (showLargePortraitWindow)
+		{
+			handleLargePortraitWindow();
+		}
+
+		if (showSpecialAnimationWindow)
+		{
+			handleSpecialAnimationWindow();
+		}
+
+		if (showWeaponLevelsWindow)
+		{
+			handleWeaponLevelsWindow();
+		}
+
+		if (showSkillDataWindow)
+		{
+			handleSkillDataWindow();
+		}
+
+		if (showActionDataWindow)
+		{
+			handleActionDataWindow();
+		}
+
+		if (showProjectileDataWindow)
+		{
+			handleProjectileWindow();
+		}
 	}
 }
 
@@ -1225,608 +913,7 @@ void reloadLoadCharacterDeque()
 			loadCharacterDeque.push_back(path.filename().string());
 		}
 	}
-	reloadLoadCharacter();
-}
-
-void loadCharacterClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, loadCharacterMenuGrid.menuGridPtr);
-	reloadLoadCharacterDeque();
-}
-
-void prevLoadCharacterButton()
-{
-	if (loadCharacterPage > 0)
-	{
-		loadCharacterPage--;
-		reloadLoadCharacter();
-	}
-}
-
-void nextLoadCharacterButton()
-{
-	if (loadCharacterPage < (loadCharacterDeque.size() - 1) / 8)
-	{
-		loadCharacterPage++;
-		reloadLoadCharacter();
-	}
-}
-
-void reloadIcons()
-{
-	std::shared_ptr<menuGridData> curMenuGrid;
-	holoCureMenuInterfacePtr->GetCurrentMenuGrid(MODNAME, curMenuGrid);
-	auto& menuDataPtrList = curMenuGrid->menuColumnsPtrList[0]->menuDataPtrList;
-	for (size_t i = 0; i < menuDataPtrList.size() - 2; i++)
-	{
-		menuDataPtrList[i]->labelName = "";
-		menuDataPtrList[i]->isVisible = false;
-	}
-	for (int i = 0; i < 8 && spriteDequePage * 8 + i < spriteDeque.size(); i++)
-	{
-		auto& menuData = menuDataPtrList[i];
-		menuData->labelName = spriteDeque[spriteDequePage * 8 + i]->spriteFileName;
-		menuData->isVisible = true;
-	}
-}
-
-void reloadSpriteDeque()
-{
-	if (!std::filesystem::exists("CharacterCreatorMod/inputData"))
-	{
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find the inputData directory");
-		g_ModuleInterface->Print(CM_RED, "Couldn't find the inputData directory");
-		return;
-	}
-	spriteDequePage = 0;
-	spriteDeque.clear();
-	for (const auto& dir : std::filesystem::directory_iterator("CharacterCreatorMod/inputData"))
-	{
-		auto path = dir.path();
-		if (path.extension().compare(".png") == 0 || path.extension().compare(".jpg") == 0)
-		{
-			std::shared_ptr<spriteData> data(new spriteData(path.generic_string(), path.filename().string(), getSpriteNumFrames(path.string())));
-			spriteDeque.push_back(data);
-		}
-	}
-	reloadIcons();
-}
-
-void portraitClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, portraitMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void prevIconButton()
-{
-	if (spriteDequePage > 0)
-	{
-		spriteDequePage--;
-		reloadIcons();
-	}
-}
-
-void nextIconButton()
-{
-	if (spriteDequePage < (spriteDeque.size() - 1) / 8)
-	{
-		spriteDequePage++;
-		reloadIcons();
-	}
-}
-
-void prevImageButton()
-{
-	std::shared_ptr<menuGridData> curMenuGrid;
-	holoCureMenuInterfacePtr->GetCurrentMenuGrid(MODNAME, curMenuGrid);
-	auto curMenuData = static_cast<menuDataImageField*>(curMenuGrid->menuColumnsPtrList[1]->menuDataPtrList[0].get());
-	curMenuData->curSubImageIndex--;
-	if (curMenuData->curSubImageIndex < 0)
-	{
-		curMenuData->curSubImageIndex = max(0, static_cast<int>(curMenuData->curSprite->numFrames) - 1);
-	}
-}
-
-void nextImageButton()
-{
-	std::shared_ptr<menuGridData> curMenuGrid;
-	holoCureMenuInterfacePtr->GetCurrentMenuGrid(MODNAME, curMenuGrid);
-	auto curMenuData = static_cast<menuDataImageField*>(curMenuGrid->menuColumnsPtrList[1]->menuDataPtrList[0].get());
-	curMenuData->curSubImageIndex++;
-	if (curMenuData->curSubImageIndex >= curMenuData->curSprite->numFrames)
-	{
-		curMenuData->curSubImageIndex = 0;
-	}
-}
-
-void playPauseButton()
-{
-	std::shared_ptr<menuGridData> curMenuGrid;
-	holoCureMenuInterfacePtr->GetCurrentMenuGrid(MODNAME, curMenuGrid);
-	auto& menuDataList = curMenuGrid->menuColumnsPtrList[1]->menuDataPtrList;
-	menuDataList[3]->isVisible = !menuDataList[3]->isVisible;
-	menuDataList[4]->isVisible = !menuDataList[4]->isVisible;
-	static_cast<menuDataImageField*>(menuDataList[0].get())->curFrameCount = menuDataList[3]->isVisible ? -1 : 0;
-}
-
-void animationFrameText()
-{
-	std::shared_ptr<menuGridData> curMenuGrid;
-	holoCureMenuInterfacePtr->GetCurrentMenuGrid(MODNAME, curMenuGrid);
-	auto& menuDataList = curMenuGrid->menuColumnsPtrList[1]->menuDataPtrList;
-	auto previewImage = static_cast<menuDataImageField*>(menuDataList[0].get());
-	auto& frameText = menuDataList[5];
-	int curImageIndex = previewImage->curSprite == nullptr ? 0 : previewImage->curSubImageIndex + 1;
-	int maxFrames = previewImage->curSprite == nullptr ? 0 : previewImage->curSprite->numFrames;
-	frameText->labelName = std::format("{} / {}", curImageIndex, maxFrames);
-}
-
-void clickIconButton()
-{
-	std::shared_ptr<menuGridData> curMenuGrid;
-	holoCureMenuInterfacePtr->GetCurrentMenuGrid(MODNAME, curMenuGrid);
-	auto previewImageData = static_cast<menuDataImageField*>(curMenuGrid->menuColumnsPtrList[1]->menuDataPtrList[0].get());
-	std::shared_ptr<menuData> selectedMenuData;
-	holoCureMenuInterfacePtr->GetSelectedMenuData(MODNAME, selectedMenuData);
-	int selectedIconIndex = -1;
-	auto& menuDataPtrList = curMenuGrid->menuColumnsPtrList[0]->menuDataPtrList;
-	for (int i = 0; i < menuDataPtrList.size(); i++)
-	{
-		if (menuDataPtrList[i].get() == selectedMenuData.get())
-		{
-			selectedIconIndex = i;
-			break;
-		}
-	}
-	if (selectedIconIndex == -1)
-	{
-		g_ModuleInterface->Print(CM_RED, "Couldn't find icon");
-		return;
-	}
-	previewImageData->curSprite = spriteDeque[spriteDequePage * 8 + selectedIconIndex];
-}
-
-void clickSkillIconButton()
-{
-	std::shared_ptr<menuGridData> curMenuGrid;
-	holoCureMenuInterfacePtr->GetCurrentMenuGrid(MODNAME, curMenuGrid);
-	auto previewImageData = static_cast<menuDataImageField*>(skillIconMenuIconPreviewImageList[skillMenuIndex].get());
-	std::shared_ptr<menuData> selectedMenuData;
-	holoCureMenuInterfacePtr->GetSelectedMenuData(MODNAME, selectedMenuData);
-	int selectedIconIndex = -1;
-	auto& menuDataPtrList = curMenuGrid->menuColumnsPtrList[0]->menuDataPtrList;
-	for (int i = 0; i < menuDataPtrList.size(); i++)
-	{
-		if (menuDataPtrList[i].get() == selectedMenuData.get())
-		{
-			selectedIconIndex = i;
-			break;
-		}
-	}
-	if (selectedIconIndex == -1)
-	{
-		g_ModuleInterface->Print(CM_RED, "Couldn't find icon");
-		return;
-	}
-	previewImageData->curSprite = spriteDeque[spriteDequePage * 8 + selectedIconIndex];
-}
-
-void buffIconClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, buffMenuDeque[buffMenuIndex].buffIconGrid->menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void clickBuffMenuButton()
-{
-	std::shared_ptr<menuData> selectedMenuData;
-	holoCureMenuInterfacePtr->GetSelectedMenuData(MODNAME, selectedMenuData);
-	int selectedBuffIndex = -1;
-	for (int i = 0; i < buffMenuButtonList.size(); i++)
-	{
-		if (buffMenuButtonList[i].get() == selectedMenuData.get())
-		{
-			selectedBuffIndex = i;
-			break;
-		}
-	}
-	if (selectedBuffIndex == -1)
-	{
-		buffMenuIndex = -1;
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find buff menu button");
-		g_ModuleInterface->Print(CM_RED, "Couldn't find buff menu button");
-		return;
-	}
-	buffMenuIndex = buffMenuPage * 8 + selectedBuffIndex;
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, buffMenuDeque[buffMenuPage * 8 + selectedBuffIndex].buffDataGrid->menuGridPtr);
-}
-
-void reloadBuffs()
-{
-	for (size_t i = 0; i < buffMenuButtonList.size(); i++)
-	{
-		buffMenuButtonList[i]->labelName = "";
-		buffMenuButtonList[i]->isVisible = false;
-	}
-	for (int i = 0; i < 8 && buffMenuPage * 8 + i < buffMenuDeque.size(); i++)
-	{
-		auto& menuData = buffMenuButtonList[i];
-		menuData->labelName = static_cast<menuDataTextBoxField*>(buffMenuDeque[buffMenuPage * 8 + i].buffDataGrid->menuColumnList[0].menuDataPtrList[0].get())->textField;
-		menuData->isVisible = true;
-	}
-	std::vector<std::string> buffNameList;
-	for (auto& curBuffMenuGrid : buffMenuDeque)
-	{
-		auto& buffName = static_cast<menuDataTextBoxField*>(curBuffMenuGrid.buffDataGrid->menuColumnList[0].menuDataPtrList[0].get())->textField;
-		buffNameList.push_back(buffName);
-	}
-	for (size_t i = 0; i < skillOnTriggerBuffSelectionMenuList.size(); i++)
-	{
-		static_cast<menuDataSelection*>(skillOnTriggerBuffSelectionMenuList[i].get())->selectionText = buffNameList;
-		static_cast<menuDataSelection*>(skillOnTriggerBuffSelectionMenuList[i].get())->curSelectionTextIndex = 0;
-	}
-}
-
-void prevBuffButton()
-{
-	if (buffMenuPage > 0)
-	{
-		buffMenuPage--;
-		reloadBuffs();
-	}
-}
-
-void nextBuffButton()
-{
-	if (buffMenuPage < (buffMenuDeque.size() - 1) / 8)
-	{
-		buffMenuPage++;
-		reloadBuffs();
-	}
-}
-
-void addBuffMenuButton()
-{
-	std::shared_ptr<menuGrid> newBuffDataMenuGrid = std::shared_ptr<menuGrid>(new menuGrid({
-		menuColumn({
-			std::shared_ptr<menuData>(new menuDataTextBoxField(100, 20 + 29 * 0, 130, 20, "BUFFMENU_NAME", "buff name", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 1, 130, 20, "BUFFMENU_ATK", "ATK+", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 2, 130, 20, "BUFFMENU_CRIT", "CRIT+", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 3, 130, 20, "BUFFMENU_HASTE", "Haste+", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 4, 130, 20, "BUFFMENU_SPEED", "SPD+", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 5, 130, 20, "BUFFMENU_DR", "DR*", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 6, 130, 20, "BUFFMENU_HealMultiplier", "HealMultiplier+", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 7, 130, 20, "BUFFMENU_Food", "Food+", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 8, 130, 20, "BUFFMENU_WeaponSizeMultiplier", "WeaponSizeMult+", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataNumberField(100, 20 + 29 * 9, 130, 20, "BUFFMENU_MaxStacks", "Max Stacks", true, nullptr, nullptr)),
-		}),
-		menuColumn({
-			std::shared_ptr<menuData>(new menuDataNumberField(330, 20 + 29 * 0, 130, 20, "BUFFMENU_Timer", "Timer", true, nullptr, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(330, 20 + 29 * 1, 180, 20, "BUFFMENU_BuffIcon", "Buff Icon", true, buffIconClickButton, nullptr)),
-		}),
-	}, "Buff Data Menu", &buffMenuGrid));
-
-	std::shared_ptr<menuGrid> newBuffIconMenuGrid = std::shared_ptr<menuGrid>(new menuGrid({
-		menuColumn({
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 0, 180, 20, "BUFFMENU_IconButton1", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 1, 180, 20, "BUFFMENU_IconButton2", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 2, 180, 20, "BUFFMENU_IconButton3", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 3, 180, 20, "BUFFMENU_IconButton4", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 4, 180, 20, "BUFFMENU_IconButton5", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 5, 180, 20, "BUFFMENU_IconButton6", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 6, 180, 20, "BUFFMENU_IconButton7", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 7, 180, 20, "BUFFMENU_IconButton8", "", false, clickIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 8, 180, 20, "BUFFMENU_PrevButton", "Prev", true, prevIconButton, nullptr)),
-			std::shared_ptr<menuData>(new menuDataButton(60, 20 + 29 * 9, 180, 20, "BUFFMENU_NextButton", "Next", true, nextIconButton, nullptr)),
-		}),
-		menuColumn({
-			std::shared_ptr<menuData>(new menuDataImageField(250, 20 + 29 * 2, 0, 0, "BUFFMENU_PreviewImage", "", true, nullptr, nullptr, 30)),
-		}),
-	}, "Buff Icon Menu", newBuffDataMenuGrid.get()));
-
-	static_cast<menuDataTextBoxField*>(newBuffDataMenuGrid->menuColumnList[0].menuDataPtrList[0].get())->textField = "newBuff";
-	newBuffDataMenuGrid->initMenuGrid();
-	newBuffIconMenuGrid->initMenuGrid();
-	buffMenuDeque.push_back(buffDataMenuGrid(newBuffDataMenuGrid, newBuffIconMenuGrid));
-	reloadBuffs();
-}
-
-void weaponLevelClickButton()
-{
-	std::shared_ptr<menuData> selectedMenuData;
-	holoCureMenuInterfacePtr->GetSelectedMenuData(MODNAME, selectedMenuData);
-	int selectedMenuIndex = -1;
-	for (int i = 0; i < weaponLevelMenuButtonList.size(); i++)
-	{
-		if (weaponLevelMenuButtonList[i].get() == selectedMenuData.get())
-		{
-			selectedMenuIndex = i;
-			break;
-		}
-	}
-	weaponLevelMenuIndex = selectedMenuIndex;
-	if (selectedMenuIndex == -1)
-	{
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find weapon level menu button");
-		g_ModuleInterface->Print(CM_RED, "Couldn't find weapon level menu button");
-		return;
-	}
-	for (auto& menuData : weaponLevelAttackTimeMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelDescriptionMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelDurationMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelDamageMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelHitLimitMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelSpeedMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelHitCDMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelAttackCountMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelAttackDelayMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : weaponLevelRangeMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	weaponLevelAttackTimeMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelDescriptionMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelDurationMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelDamageMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelHitLimitMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelSpeedMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelHitCDMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelAttackCountMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelAttackDelayMenuList[weaponLevelMenuIndex]->isVisible = true;
-	weaponLevelRangeMenuList[weaponLevelMenuIndex]->isVisible = true;
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, weaponLevelDataMenuGrid.menuGridPtr);
-}
-
-void skillLevelClickButton()
-{
-	std::shared_ptr<menuData> selectedMenuData;
-	holoCureMenuInterfacePtr->GetSelectedMenuData(MODNAME, selectedMenuData);
-	int selectedMenuIndex = -1;
-	for (int i = 0; i < skillsDataMenuLevelList.size(); i++)
-	{
-		if (skillsDataMenuLevelList[i].get() == selectedMenuData.get())
-		{
-			selectedMenuIndex = i;
-			break;
-		}
-	}
-	skillLevelMenuIndex = selectedMenuIndex;
-	if (selectedMenuIndex == -1)
-	{
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find weapon level menu button");
-		g_ModuleInterface->Print(CM_RED, "Couldn't find weapon level menu button");
-		return;
-	}
-	for (auto& menuData : skillsDataLevelMenuAttackButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataLevelMenuCritButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataLevelMenuHasteButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataLevelMenuSpeedButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataLevelMenuDRButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataLevelMenuHealMultiplierButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataLevelMenuFoodButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataLevelMenuWeaponSizeMultiplierButtonList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillDataLevelDescriptionMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	skillsDataLevelMenuAttackButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillsDataLevelMenuCritButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillsDataLevelMenuHasteButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillsDataLevelMenuSpeedButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillsDataLevelMenuDRButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillsDataLevelMenuHealMultiplierButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillsDataLevelMenuFoodButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillsDataLevelMenuWeaponSizeMultiplierButtonList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillDataLevelDescriptionMenuList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, skillsDataLevelMenuGrid.menuGridPtr);
-}
-
-void skillMenuClickButton()
-{
-	std::shared_ptr<menuData> selectedMenuData;
-	holoCureMenuInterfacePtr->GetSelectedMenuData(MODNAME, selectedMenuData);
-	int selectedMenuIndex = -1;
-	for (int i = 0; i < skillsMenuButtonList.size(); i++)
-	{
-		if (skillsMenuButtonList[i].get() == selectedMenuData.get())
-		{
-			selectedMenuIndex = i;
-			break;
-		}
-	}
-	skillMenuIndex = selectedMenuIndex;
-	if (selectedMenuIndex == -1)
-	{
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find skills menu button");
-		g_ModuleInterface->Print(CM_RED, "Couldn't find skills menu button");
-		return;
-	}
-	for (auto& menuData : skillIconMenuIconPreviewImageList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillsDataMenuNameList)
-	{
-		menuData->isVisible = false;
-	}
-	
-	skillIconMenuIconPreviewImageList[skillMenuIndex]->isVisible = true;
-	skillsDataMenuNameList[skillMenuIndex]->isVisible = true;
-
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, skillsDataMenuGrid.menuGridPtr);
-}
-
-void largePortraitClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, largePortraitMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void idleAnimationClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, idleAnimationMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void runAnimationClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, runAnimationMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void specialAnimationClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, specialAnimationMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void weaponLevelDescriptionClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, weaponLevelDescriptionMenuGrid.menuGridPtr);
-}
-
-void skillDescriptionClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, skillDataLevelDescriptionMenuGrid.menuGridPtr);
-}
-
-void skillOnTriggerClickButton()
-{
-	for (auto& menuData : skillOnTriggerBuffSelectionMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillOnTriggerTypeSelectionMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	for (auto& menuData : skillOnTriggerProbabilityMenuList)
-	{
-		menuData->isVisible = false;
-	}
-	skillOnTriggerBuffSelectionMenuList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillOnTriggerTypeSelectionMenuList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	skillOnTriggerProbabilityMenuList[skillMenuIndex * 3 + skillLevelMenuIndex]->isVisible = true;
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, skillOnTriggerMenuGrid.menuGridPtr);
-}
-
-void specialDescriptionClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, specialDescriptionMenuGrid.menuGridPtr);
-}
-
-void skillIconMenuClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, skillIconMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void specialIconClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, specialIconMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void weaponIconClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, weaponIconMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void weaponAwakenedIconClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, weaponAwakenedIconMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void weaponAnimationClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, weaponAnimationMenuGrid.menuGridPtr);
-	reloadSpriteDeque();
-}
-
-void weaponLevelMenuClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, weaponLevelMenuGrid.menuGridPtr);
-}
-
-void characterDataClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, characterDataMenuGrid.menuGridPtr);
-}
-
-void mainWeaponClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, weaponDataMenuGrid.menuGridPtr);
-}
-
-void skillClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, skillsMenuGrid.menuGridPtr);
-}
-
-void specialClickButton()
-{
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, specialMenuGrid.menuGridPtr);
-}
-
-void buffClickButton()
-{
-	buffMenuPage = 0;
-	holoCureMenuInterfacePtr->SwapToMenuGrid(MODNAME, buffMenuGrid.menuGridPtr);
-	reloadBuffs();
+//	reloadLoadCharacter();
 }
 
 std::string getSpriteFileName(std::shared_ptr<menuData> dataPtr)
@@ -1887,148 +974,6 @@ void parseStringToJSONInt(const std::string& inputStr, JSONInt& outputJSONInt, b
 		return;
 	}
 	outputJSONInt.isDefined = true;
-}
-
-void exportCharacterClickButton()
-{
-	CreateDirectory(L"CharacterCreatorMod", NULL);
-	auto charName = static_cast<menuDataTextBoxField*>(characterDataMenuCharName.get())->textField;
-	std::string charDirName = "CharacterCreatorMod/char_" + charName;
-	CreateDirectoryA(charDirName.c_str(), NULL);
-
-	characterData outCharData;
-	outCharData.charName = charName;
-	auto portraitFileName = getSpriteFileName(portraitMenuPreviewImage);
-	outCharData.portraitFileName = portraitFileName;
-	copySpriteToDestination(portraitMenuPreviewImage, charDirName + "/" + portraitFileName);
-	auto largePortraitFileName = getSpriteFileName(largePortraitMenuPreviewImage);
-	outCharData.largePortraitFileName = largePortraitFileName;
-	copySpriteToDestination(largePortraitMenuPreviewImage, charDirName + "/" + largePortraitFileName);
-	
-	outCharData.idleAnimationFPS.isDefined = true;
-	outCharData.idleAnimationFPS.value = static_cast<menuDataImageField*>(idleAnimationMenuPreviewImage.get())->fps;
-	auto idleAnimationFileName = getSpriteFileName(idleAnimationMenuPreviewImage);
-	outCharData.idleAnimationFileName = idleAnimationFileName;
-	copySpriteToDestination(idleAnimationMenuPreviewImage, charDirName + "/" + idleAnimationFileName);
-
-	outCharData.runAnimationFPS.isDefined = true;
-	outCharData.runAnimationFPS.value = static_cast<menuDataImageField*>(runAnimationMenuPreviewImage.get())->fps;
-	auto runAnimationFileName = getSpriteFileName(runAnimationMenuPreviewImage);
-	outCharData.runAnimationFileName = runAnimationFileName;
-	copySpriteToDestination(runAnimationMenuPreviewImage, charDirName + "/" + runAnimationFileName);
-
-	parseStringToJSONDouble(static_cast<menuDataNumberField*>(characterDataMenuHP.get())->textField, outCharData.hp, false);
-	parseStringToJSONDouble(static_cast<menuDataNumberField*>(characterDataMenuATK.get())->textField, outCharData.atk, false);
-	parseStringToJSONDouble(static_cast<menuDataNumberField*>(characterDataMenuSPD.get())->textField, outCharData.spd, false);
-	parseStringToJSONDouble(static_cast<menuDataNumberField*>(characterDataMenuCrit.get())->textField, outCharData.crit, false);
-
-	auto attackIconFileName = getSpriteFileName(weaponIconMenuIconPreviewImage);
-	outCharData.attackIconFileName = attackIconFileName;
-	copySpriteToDestination(weaponIconMenuIconPreviewImage, charDirName + "/" + attackIconFileName);
-	
-	auto attackAwakenedIconFileName = getSpriteFileName(weaponAwakenedIconMenuIconPreviewImage);
-	outCharData.attackAwakenedIconFileName = attackAwakenedIconFileName;
-	copySpriteToDestination(weaponAwakenedIconMenuIconPreviewImage, charDirName + "/" + attackAwakenedIconFileName);
-	
-	outCharData.attackAnimationFPS.isDefined = true;
-	outCharData.attackAnimationFPS.value = static_cast<menuDataImageField*>(weaponAnimationMenuPreviewImage.get())->fps;
-	auto attackAnimationFileName = getSpriteFileName(weaponAnimationMenuPreviewImage);
-	outCharData.attackAnimationFileName = attackAnimationFileName;
-	copySpriteToDestination(weaponAnimationMenuPreviewImage, charDirName + "/" + attackAnimationFileName);
-	outCharData.attackName = static_cast<menuDataTextBoxField*>(weaponDataMenuWeaponName.get())->textField;
-
-	outCharData.mainWeaponWeaponType = static_cast<menuDataSelection*>(weaponDataMenuWeaponType.get())->selectionText[static_cast<menuDataSelection*>(weaponDataMenuWeaponType.get())->curSelectionTextIndex];
-	auto specialIconFileName = getSpriteFileName(specialIconMenuIconPreviewImage);
-	outCharData.specialIconFileName = specialIconFileName;
-	copySpriteToDestination(specialIconMenuIconPreviewImage, charDirName + "/" + specialIconFileName);
-	parseStringToJSONInt(static_cast<menuDataNumberField*>(specialMenuSpecialCooldown.get())->textField, outCharData.specialCooldown);
-	outCharData.specialName = static_cast<menuDataTextBoxField*>(specialMenuSpecialName.get())->textField;
-	outCharData.specialDescription = static_cast<menuDataTextBoxField*>(specialDescriptionMenuSpecialDescription.get())->textField;
-	parseStringToJSONInt(static_cast<menuDataNumberField*>(characterDataMenuSizeGrade.get())->textField, outCharData.sizeGrade);
-	
-	for (int i = 0; i < weaponLevelDescriptionMenuList.size(); i++)
-	{
-		weaponLevelData curWeaponLevelData;
-		curWeaponLevelData.attackDescription = static_cast<menuDataTextBoxField*>(weaponLevelDescriptionMenuList[i].get())->textField;
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(weaponLevelAttackTimeMenuList[i].get())->textField, curWeaponLevelData.attackTime);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(weaponLevelDurationMenuList[i].get())->textField, curWeaponLevelData.duration);
-		parseStringToJSONDouble(static_cast<menuDataNumberField*>(weaponLevelDamageMenuList[i].get())->textField, curWeaponLevelData.damage);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(weaponLevelHitLimitMenuList[i].get())->textField, curWeaponLevelData.hitLimit);
-		parseStringToJSONDouble(static_cast<menuDataNumberField*>(weaponLevelSpeedMenuList[i].get())->textField, curWeaponLevelData.speed);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(weaponLevelHitCDMenuList[i].get())->textField, curWeaponLevelData.hitCD);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(weaponLevelAttackCountMenuList[i].get())->textField, curWeaponLevelData.attackCount);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(weaponLevelAttackDelayMenuList[i].get())->textField, curWeaponLevelData.attackDelay);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(weaponLevelRangeMenuList[i].get())->textField, curWeaponLevelData.range);
-		outCharData.weaponLevelDataList.push_back(curWeaponLevelData);
-	}
-
-	for (int i = 0; i < 3; i++)
-	{
-		skillData curSkillData;
-		for (int j = 0; j < 3; j++)
-		{
-			skillLevelData curSkillLevelData;
-			int listIndex = i * 3 + j;
-			
-			parseStringToJSONInt(static_cast<menuDataNumberField*>(skillsDataLevelMenuAttackButtonList[listIndex].get())->textField, curSkillLevelData.attackIncrement);
-			parseStringToJSONInt(static_cast<menuDataNumberField*>(skillsDataLevelMenuCritButtonList[listIndex].get())->textField, curSkillLevelData.critIncrement);
-			parseStringToJSONInt(static_cast<menuDataNumberField*>(skillsDataLevelMenuHasteButtonList[listIndex].get())->textField, curSkillLevelData.hasteIncrement);
-			parseStringToJSONInt(static_cast<menuDataNumberField*>(skillsDataLevelMenuSpeedButtonList[listIndex].get())->textField, curSkillLevelData.speedIncrement);
-			parseStringToJSONDouble(static_cast<menuDataNumberField*>(skillsDataLevelMenuDRButtonList[listIndex].get())->textField, curSkillLevelData.DRMultiplier);
-			parseStringToJSONDouble(static_cast<menuDataNumberField*>(skillsDataLevelMenuHealMultiplierButtonList[listIndex].get())->textField, curSkillLevelData.healMultiplier);
-			parseStringToJSONDouble(static_cast<menuDataNumberField*>(skillsDataLevelMenuFoodButtonList[listIndex].get())->textField, curSkillLevelData.food);
-			parseStringToJSONDouble(static_cast<menuDataNumberField*>(skillsDataLevelMenuWeaponSizeMultiplierButtonList[listIndex].get())->textField, curSkillLevelData.weaponSize);
-			curSkillLevelData.skillDescription = static_cast<menuDataTextBoxField*>(skillDataLevelDescriptionMenuList[listIndex].get())->textField;
-			curSkillLevelData.skillOnTriggerData.buffName = static_cast<menuDataSelection*>(skillOnTriggerBuffSelectionMenuList[listIndex].get())->selectionText[static_cast<menuDataSelection*>(skillOnTriggerBuffSelectionMenuList[listIndex].get())->curSelectionTextIndex];
-			curSkillLevelData.skillOnTriggerData.onTriggerType = static_cast<menuDataSelection*>(skillOnTriggerTypeSelectionMenuList[listIndex].get())->selectionText[static_cast<menuDataSelection*>(skillOnTriggerTypeSelectionMenuList[listIndex].get())->curSelectionTextIndex];
-			parseStringToJSONInt(static_cast<menuDataNumberField*>(skillOnTriggerProbabilityMenuList[listIndex].get())->textField, curSkillLevelData.skillOnTriggerData.probability);
-			curSkillData.skillLevelDataList.push_back(curSkillLevelData);
-		}
-		curSkillData.skillName = static_cast<menuDataTextBoxField*>(skillsDataMenuNameList[i].get())->textField;
-		auto skillIconFileName = getSpriteFileName(skillIconMenuIconPreviewImageList[i]);
-		curSkillData.skillIconFileName = skillIconFileName;
-		copySpriteToDestination(skillIconMenuIconPreviewImageList[i], charDirName + "/" + skillIconFileName);
-
-		outCharData.skillDataList.push_back(curSkillData);
-	}
-	outCharData.specialAnimationFPS.isDefined = true;
-	outCharData.specialAnimationFPS.value = static_cast<menuDataImageField*>(specialAnimationMenuPreviewImage.get())->fps;
-	auto specialAnimationFileName = getSpriteFileName(specialAnimationMenuPreviewImage);
-	outCharData.specialAnimationFileName = specialAnimationFileName;
-	copySpriteToDestination(specialAnimationMenuPreviewImage, charDirName + "/" + specialAnimationFileName);
-	parseStringToJSONDouble(static_cast<menuDataNumberField*>(specialMenuDamage.get())->textField, outCharData.specialDamage, false);
-	parseStringToJSONInt(static_cast<menuDataNumberField*>(specialMenuDuration.get())->textField, outCharData.specialDuration, false);
-
-	for (auto& buffMenuGrid : buffMenuDeque)
-	{
-		buffData curBuffData;
-		auto& curBuffDataColumn = buffMenuGrid.buffDataGrid->menuColumnList[0];
-		auto& curBuffIconColumn = buffMenuGrid.buffIconGrid->menuColumnList[1];
-		curBuffData.buffName = static_cast<menuDataTextBoxField*>(curBuffDataColumn.menuDataPtrList[0].get())->textField;
-		buffLevelData curBuffLevelData;
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[1].get())->textField, curBuffLevelData.attackIncrement);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[2].get())->textField, curBuffLevelData.critIncrement);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[3].get())->textField, curBuffLevelData.hasteIncrement);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[4].get())->textField, curBuffLevelData.speedIncrement);
-		parseStringToJSONDouble(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[5].get())->textField, curBuffLevelData.DRMultiplier);
-		parseStringToJSONDouble(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[6].get())->textField, curBuffLevelData.healMultiplier);
-		parseStringToJSONDouble(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[7].get())->textField, curBuffLevelData.food);
-		parseStringToJSONDouble(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[8].get())->textField, curBuffLevelData.weaponSize);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(curBuffDataColumn.menuDataPtrList[9].get())->textField, curBuffLevelData.maxStacks);
-		parseStringToJSONInt(static_cast<menuDataNumberField*>(buffMenuGrid.buffDataGrid->menuColumnList[1].menuDataPtrList[0].get())->textField, curBuffLevelData.timer);
-		curBuffData.levels.push_back(curBuffLevelData);
-		auto buffIconFileName = getSpriteFileName(curBuffIconColumn.menuDataPtrList[0]);
-		curBuffData.buffIconFileName = buffIconFileName;
-		copySpriteToDestination(curBuffIconColumn.menuDataPtrList[0], charDirName + "/" + buffIconFileName);
-		outCharData.buffDataList.push_back(curBuffData);
-	}
-
-	nlohmann::json outputJSON = outCharData;
-
-	std::ofstream outFile;
-	outFile.open(charDirName + "/charData.json");
-	outFile << std::setw(4) << outputJSON << "\n";
-	outFile.close();
 }
 
 void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::string& outputStr)
@@ -2193,6 +1138,114 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 }
 
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<std::string>& outputStringList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputStringList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to string list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to string list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to string list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to string list", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<actionData>& outputActionDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputActionDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to actionData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to actionData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to actionData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to actionData list", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<projectileData>& outputProjectileDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputProjectileDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to projectileData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to projectileData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to projectileData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to projectileData list", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, projectileActionTriggerTypeEnum& outputProjectileActionTriggerTypeEnum)
+{
+	try
+	{
+		std::string jsonString;
+		inputJson.at(varName).get_to(jsonString);
+		for (const auto& [key, value] : projectileActionTriggerTypeMap)
+		{
+			if (jsonString.compare(value) == 0)
+			{
+				outputProjectileActionTriggerTypeEnum = key;
+				break;
+			}
+		}
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, actionTypeEnum& outputActionTypeEnum)
+{
+	try
+	{
+		std::string jsonString;
+		inputJson.at(varName).get_to(jsonString);
+		for (const auto& [key, value] : actionTypeMap)
+		{
+			if (jsonString.compare(value) == 0)
+			{
+				outputActionTypeEnum = key;
+				break;
+			}
+		}
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
+	}
+}
+
 void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 {
 	outputJson = nlohmann::json{
@@ -2225,6 +1278,8 @@ void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 		{ "levels", inputCharData.weaponLevelDataList },
 		{ "skills", inputCharData.skillDataList },
 		{ "buffs", inputCharData.buffDataList },
+		{ "actionDataList", inputCharData.actionDataList },
+		{ "projectileDataList", inputCharData.projectileDataList },
 	};
 }
 
@@ -2259,6 +1314,8 @@ void from_json(const nlohmann::json& inputJson, characterData& outputCharData)
 	parseJSONToVar(inputJson, "levels", outputCharData.weaponLevelDataList);
 	parseJSONToVar(inputJson, "skills", outputCharData.skillDataList);
 	parseJSONToVar(inputJson, "buffs", outputCharData.buffDataList);
+	parseJSONToVar(inputJson, "actionDataList", outputCharData.actionDataList);
+	parseJSONToVar(inputJson, "projectileDataList", outputCharData.projectileDataList);
 }
 
 void to_json(nlohmann::json& outputJson, const skillData& inputSkillData)
@@ -2320,6 +1377,7 @@ void to_json(nlohmann::json& outputJson, const weaponLevelData& inputWeaponLevel
 		{ "hitLimit", inputWeaponLevelData.hitLimit },
 		{ "range", inputWeaponLevelData.range },
 		{ "speed", inputWeaponLevelData.speed },
+		{ "projectileActionList", inputWeaponLevelData.projectileActionList },
 	};
 }
 
@@ -2335,6 +1393,11 @@ void from_json(const nlohmann::json& inputJson, weaponLevelData& outputWeaponLev
 	parseJSONToVar(inputJson, "hitLimit", outputWeaponLevelData.hitLimit);
 	parseJSONToVar(inputJson, "range", outputWeaponLevelData.range);
 	parseJSONToVar(inputJson, "speed", outputWeaponLevelData.speed);
+	auto& projectileActionList = inputJson["projectileActionList"];
+	if (projectileActionList.is_array())
+	{
+		outputWeaponLevelData.projectileActionList = projectileActionList;
+	}
 }
 
 void to_json(nlohmann::json& outputJson, const buffLevelData& inputBuffLevelData)
@@ -2446,5 +1509,109 @@ void from_json(const nlohmann::json& inputJson, JSONInt& outputJSONIntData)
 	else
 	{
 		outputJSONIntData.isDefined = false;
+	}
+}
+
+void to_json(nlohmann::json& outputJson, const actionProjectile& inputActionProjectile)
+{
+	outputJson = nlohmann::json{
+		{ "relativeSpawnPosX", inputActionProjectile.relativeSpawnPosX },
+		{ "relativeSpawnPosY", inputActionProjectile.relativeSpawnPosY },
+		{ "spawnDir", inputActionProjectile.spawnDir },
+		{ "isAbsoluteSpawnDir", inputActionProjectile.isAbsoluteSpawnDir },
+		{ "projectileDataName", inputActionProjectile.projectileDataName },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, actionProjectile& outputActionProjectile)
+{
+	parseJSONToVar(inputJson, "relativeSpawnPosX", outputActionProjectile.relativeSpawnPosX);
+	parseJSONToVar(inputJson, "relativeSpawnPosY", outputActionProjectile.relativeSpawnPosY);
+	parseJSONToVar(inputJson, "spawnDir", outputActionProjectile.spawnDir);
+	auto& isAbsoluteSpawnDir = inputJson["isAbsoluteSpawnDir"];
+	if (isAbsoluteSpawnDir.is_boolean())
+	{
+		outputActionProjectile.isAbsoluteSpawnDir = isAbsoluteSpawnDir;
+	}
+	auto& projectileDataName = inputJson["projectileDataName"];
+	if (projectileDataName.is_string())
+	{
+		outputActionProjectile.projectileDataName = projectileDataName;
+	}
+}
+
+void to_json(nlohmann::json& outputJson, const actionData& inputActionData)
+{
+	outputJson = nlohmann::json{
+		{ "actionName", inputActionData.actionName },
+		{ "actionType", actionTypeMap[inputActionData.actionType] },
+//		{ "nextActionList", inputActionData.nextActionList },
+	};
+	if (inputActionData.actionType == actionType_SpawnProjectile)
+	{
+		nlohmann::json tempJson;
+		to_json(tempJson, inputActionData.actionProjectileData);
+		outputJson["actionProjectileData"] = tempJson;
+	}
+}
+
+void from_json(const nlohmann::json& inputJson, actionData& outputActionData)
+{
+	parseJSONToVar(inputJson, "actionName", outputActionData.actionName);
+	parseJSONToVar(inputJson, "actionType", outputActionData.actionType);
+//	parseJSONToVar(inputJson, "nextActionList", outputActionData.nextActionList);
+	if (outputActionData.actionType == actionType_SpawnProjectile)
+	{
+		from_json(inputJson["actionProjectileData"], outputActionData.actionProjectileData);
+	}
+}
+
+void to_json(nlohmann::json& outputJson, const projectileActionData& inputProjectileActionData)
+{
+	outputJson = nlohmann::json{
+		{ "projectileActionName", inputProjectileActionData.projectileActionName },
+		{ "projectileActionTriggerType", projectileActionTriggerTypeMap[inputProjectileActionData.projectileActionTriggerType] },
+		{ "triggeredActionName", inputProjectileActionData.triggeredActionName },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, projectileActionData& outputProjectileActionData)
+{
+	parseJSONToVar(inputJson, "projectileActionName", outputProjectileActionData.projectileActionName);
+	parseJSONToVar(inputJson, "projectileActionTriggerType", outputProjectileActionData.projectileActionTriggerType);
+	parseJSONToVar(inputJson, "triggeredActionName", outputProjectileActionData.triggeredActionName);
+}
+
+void to_json(nlohmann::json& outputJson, const projectileData& inputProjectileData)
+{
+	outputJson = nlohmann::json{
+		{ "projectileName", inputProjectileData.projectileName },
+		{ "projectileAnimationFPS", inputProjectileData.projectileAnimationFPS },
+		{ "projectileAnimationFileName", inputProjectileData.projectileAnimationFileName },
+		{ "projectileDamage", inputProjectileData.projectileDamage },
+		{ "projectileDuration", inputProjectileData.projectileDuration },
+		{ "projectileHitCD", inputProjectileData.projectileHitCD },
+		{ "projectileHitLimit", inputProjectileData.projectileHitLimit },
+		{ "projectileHitRange", inputProjectileData.projectileHitRange },
+		{ "projectileSpeed", inputProjectileData.projectileSpeed },
+		{ "projectileActionList", inputProjectileData.projectileActionList },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, projectileData& outputProjectileData)
+{
+	parseJSONToVar(inputJson, "projectileName", outputProjectileData.projectileName);
+	parseJSONToVar(inputJson, "projectileAnimationFPS", outputProjectileData.projectileAnimationFPS);
+	parseJSONToVar(inputJson, "projectileAnimationFileName", outputProjectileData.projectileAnimationFileName);
+	parseJSONToVar(inputJson, "projectileDamage", outputProjectileData.projectileDamage);
+	parseJSONToVar(inputJson, "projectileDuration", outputProjectileData.projectileDuration);
+	parseJSONToVar(inputJson, "projectileHitCD", outputProjectileData.projectileHitCD);
+	parseJSONToVar(inputJson, "projectileHitLimit", outputProjectileData.projectileHitLimit);
+	parseJSONToVar(inputJson, "projectileHitRange", outputProjectileData.projectileHitRange);
+	parseJSONToVar(inputJson, "projectileSpeed", outputProjectileData.projectileSpeed);
+	auto& projectileActionList = inputJson["projectileActionList"];
+	if (projectileActionList.is_array())
+	{
+		outputProjectileData.projectileActionList = projectileActionList;
 	}
 }

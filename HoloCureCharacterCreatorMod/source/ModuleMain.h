@@ -3,7 +3,7 @@
 #include <YYToolkit/YYTK_Shared.hpp>
 #include <CallbackManager/CallbackManagerInterface.h>
 
-#define VERSION_NUM "v1.0.4"
+#define VERSION_NUM "v1.0.5"
 #define MODNAME "Holocure Character Creator Mod " VERSION_NUM
 
 #define SOME_ENUM(DO) \
@@ -79,6 +79,12 @@
 	DO(selectedCharacter) \
 	DO(isMelee) \
 	DO(stayOnCreator) \
+	DO(weapons) \
+	DO(level) \
+	DO(ExecuteAttack) \
+	DO(direction) \
+	DO(x) \
+	DO(y) \
 
 #define MAKE_ENUM(VAR) GML_ ## VAR,
 enum VariableNames
@@ -106,6 +112,7 @@ extern TRoutine origStructSetFromHashFunc;
 
 extern int objInputManagerIndex;
 extern int objAttackControllerIndex;
+extern int objPlayerManagerIndex;
 extern int sprHudInitButtonsIndex;
 extern int sprRhythmButtonsIndex;
 extern int jpFont;

@@ -30,11 +30,13 @@ YYTKInterface* g_ModuleInterface = nullptr;
 YYRunnerInterface g_RunnerInterface;
 
 PFUNC_YYGMLScript origCanSubmitScoreScript = nullptr;
+PFUNC_YYGMLScript origExecuteAttackScript = nullptr;
 
 CInstance* globalInstance = nullptr;
 
 int objInputManagerIndex = -1;
 int objAttackControllerIndex = -1;
+int objPlayerManagerIndex = -1;
 int sprHudInitButtonsIndex = -1;
 int sprRhythmButtonsIndex = -1;
 int jpFont = -1;
@@ -64,11 +66,29 @@ AurieStatus FindMemoryPatternAddress(const unsigned char* Pattern, const char* P
 	return AURIE_SUCCESS;
 }
 
+void FrameCallback(FWFrame& FrameContext)
+{
+	UNREFERENCED_PARAMETER(FrameContext);
+	
+}
+
+void WindowsProcessCallback(FWWndProc& WindowsProcess)
+{
+	
+}
+
+
 EXPORTED AurieStatus ModuleInitialize(
 	IN AurieModule* Module,
 	IN const fs::path& ModulePath
 )
 {
+	// TODO: Top priority - Add actions which will be kind of like mini code blocks that can trigger other stuff (Maybe including other actions?). 
+	// This should include spawning projectiles, spawning food, doing other stuff ... Maybe include start action and end action stuff?
+	// Probably should add a time based trigger for actions. Also add onTrigger for projectiles that can trigger actions as well
+	// 
+	// TODO: Add an option to be able to use in game data/code as base
+	// 
 	// TODO: Should add levels for buffs
 	// TODO: Probably should try to avoid loading the same image multiple times if it is used multiple times
 	// TODO: Add delete option for buffs
@@ -102,6 +122,9 @@ EXPORTED AurieStatus ModuleInitialize(
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Failed to get HoloCure Menu interface. Make sure that HoloCureMenuInterfaceMod is located in the mods/Aurie directory.\n");
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
+
+	g_ModuleInterface->CreateCallback(Module, EVENT_WNDPROC, WindowsProcessCallback, 0);
+	g_ModuleInterface->CreateCallback(Module, EVENT_FRAME, FrameCallback, 0);
 
 	initMenu();
 
@@ -139,6 +162,11 @@ EXPORTED AurieStatus ModuleInitialize(
 		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_CharSelect_Draw_0");
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
+	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterCodeEventCallback(MODNAME, "gml_Object_obj_TitleScreen_Draw_0", nullptr, TitleScreenDrawAfter)))
+	{
+		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_TitleScreen_Draw_0");
+		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
+	}
 	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterCodeEventCallback(MODNAME, "gml_Object_obj_AttackController_Create_0", nullptr, AttackControllerCreateAfter)))
 	{
 		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_AttackController_Create_0");
@@ -154,10 +182,25 @@ EXPORTED AurieStatus ModuleInitialize(
 		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_PlayerManager_Other_22");
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
+	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterCodeEventCallback(MODNAME, "gml_Object_obj_Attack_Create_0", nullptr, AttackCreateAfter)))
+	{
+		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_Attack_Create_0");
+		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
+	}
+	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterCodeEventCallback(MODNAME, "gml_Object_obj_Attack_Destroy_0", AttackDestroyBefore, nullptr)))
+	{
+		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_Attack_Destroy_0");
+		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
+	}
 
 	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterScriptFunctionCallback(MODNAME, "gml_Script_CanSubmitScore@gml_Object_obj_PlayerManager_Create_0", CanSubmitScoreFuncBefore, nullptr, &origCanSubmitScoreScript)))
 	{
 		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Script_CanSubmitScore@gml_Object_obj_PlayerManager_Create_0");
+		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
+	}
+	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterScriptFunctionCallback(MODNAME, "gml_Script_ExecuteAttack@gml_Object_obj_AttackController_Create_0", nullptr, nullptr, &origExecuteAttackScript)))
+	{
+		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Script_ExecuteAttack@gml_Object_obj_AttackController_Create_0");
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
 
@@ -246,6 +289,7 @@ EXPORTED AurieStatus ModuleInitialize(
 
 	objInputManagerIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "obj_InputManager" }).ToInt32());
 	objAttackControllerIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "obj_AttackController" }).ToInt32());
+	objPlayerManagerIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "obj_PlayerManager" }).ToInt32());
 	sprHudInitButtonsIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "hud_initButtons" }).ToInt32());
 	sprRhythmButtonsIndex = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "spr_rhythmButtons" }).ToInt32());
 	jpFont = static_cast<int>(g_ModuleInterface->CallBuiltin("asset_get_index", { "jpFont" }).ToInt32());
