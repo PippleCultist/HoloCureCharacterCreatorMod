@@ -17,6 +17,7 @@
 
 extern CallbackManagerInterface* callbackManagerInterfacePtr;
 extern HoloCureMenuInterface* holoCureMenuInterfacePtr;
+extern std::unordered_map<std::string, characterDataStruct> characterDataMap;
 
 int spriteDequePage = 0;
 std::deque<std::shared_ptr<spriteData>> spriteDeque;
@@ -35,7 +36,6 @@ int curCharIdx = -1;
 int loadedCharIdx = -1;
 int curBuffDataIdx = -1;
 bool hasLoadedData = false;
-bool showAttackAnimationWindow = false;
 bool showBuffDataWindow = false;
 bool showIdleAnimationWindow = false;
 bool showRunAnimationWindow = false;
@@ -163,7 +163,6 @@ void resetCharData()
 	curCharIdx = -1;
 	loadedCharIdx = -1;
 	hasLoadedData = false;
-	showAttackAnimationWindow = false;
 	charList.clear();
 	for (const auto& dir : std::filesystem::directory_iterator("CharacterCreatorMod"))
 	{
@@ -282,18 +281,6 @@ void addImageSelector(std::string name, std::string& fileName, ID3D11ShaderResou
 
 }
 
-void handleAttackAnimationWindow()
-{
-	ImGui::Begin("Attack Animation");
-
-	ImGui::InputText("attackName", &curCharData.attackName);
-
-	addImageSelector("attackAnimation", curCharData.attackAnimationFileName, &attackAnimationTexture, attackAnimationWidth, attackAnimationHeight,
-		true, &attackAnimationCurFrame, &attackAnimationNumFrames, &curCharData.attackAnimationFPS, &isAttackAnimationPlaying);
-
-	ImGui::End();
-}
-
 void handleBuffDataWindow()
 {
 	ImGui::Begin("Buff Data");
@@ -347,6 +334,9 @@ void handleBuffDataWindow()
 		curBuffData.levels[0].speedIncrement.isDefined |= ImGui::InputInt("speedIncrement", &curBuffData.levels[0].speedIncrement.value);
 		curBuffData.levels[0].timer.isDefined |= ImGui::InputInt("timer", &curBuffData.levels[0].timer.value);
 		curBuffData.levels[0].weaponSize.isDefined |= ImGui::InputDouble("weaponSize", &curBuffData.levels[0].weaponSize.value);
+		curBuffData.levels[0].pickupRange.isDefined |= ImGui::InputDouble("pickupRange", &curBuffData.levels[0].pickupRange.value);
+		curBuffData.levels[0].critMod.isDefined |= ImGui::InputDouble("critDamage", &curBuffData.levels[0].critMod.value);
+		curBuffData.levels[0].bonusProjectile.isDefined |= ImGui::InputDouble("bonusProjectile", &curBuffData.levels[0].bonusProjectile.value);
 		
 		addImageSelector("buffIcon", curBuffData.buffIconFileName, &buffIconTexture, buffIconWidth, buffIconHeight,
 			false, nullptr, nullptr, nullptr, nullptr);
@@ -370,8 +360,27 @@ void handleIdleAnimationWindow()
 {
 	ImGui::Begin("Idle Animation");
 
-	addImageSelector("idleAnimation", curCharData.idleAnimationFileName, &idleAnimationTexture, idleAnimationWidth, idleAnimationHeight,
-		true, &idleAnimationCurFrame, &idleAnimationNumFrames, &curCharData.idleAnimationFPS, &isIdleAnimationPlaying);
+	ImGui::Checkbox("Use in game idle sprite", &curCharData.isUsingInGameIdleSprite);
+	if (curCharData.isUsingInGameIdleSprite)
+	{
+		if (ImGui::BeginCombo("Idle Sprite Char Name", curCharData.inGameIdleSpriteChar.c_str()))
+		{
+			for (const auto& [key, value] : characterDataMap)
+			{
+				const bool is_selected = curCharData.inGameIdleSpriteChar.compare(key);
+				if (ImGui::Selectable(key.c_str(), is_selected))
+				{
+					curCharData.inGameIdleSpriteChar = key;
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
+	else
+	{
+		addImageSelector("idleAnimation", curCharData.idleAnimationFileName, &idleAnimationTexture, idleAnimationWidth, idleAnimationHeight,
+			true, &idleAnimationCurFrame, &idleAnimationNumFrames, &curCharData.idleAnimationFPS, &isIdleAnimationPlaying);
+	}
 
 	ImGui::End();
 }
@@ -380,8 +389,27 @@ void handleRunAnimationWindow()
 {
 	ImGui::Begin("Run Animation");
 
-	addImageSelector("runAnimation", curCharData.runAnimationFileName, &runAnimationTexture, runAnimationWidth, runAnimationHeight,
-		true, &runAnimationCurFrame, &runAnimationNumFrames, &curCharData.runAnimationFPS, &isRunAnimationPlaying);
+	ImGui::Checkbox("Use in game run sprite", &curCharData.isUsingInGameRunSprite);
+	if (curCharData.isUsingInGameRunSprite)
+	{
+		if (ImGui::BeginCombo("Run Sprite Char Name", curCharData.inGameRunSpriteChar.c_str()))
+		{
+			for (const auto& [key, value] : characterDataMap)
+			{
+				const bool is_selected = curCharData.inGameRunSpriteChar.compare(key);
+				if (ImGui::Selectable(key.c_str(), is_selected))
+				{
+					curCharData.inGameRunSpriteChar = key;
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
+	else
+	{
+		addImageSelector("runAnimation", curCharData.runAnimationFileName, &runAnimationTexture, runAnimationWidth, runAnimationHeight,
+			true, &runAnimationCurFrame, &runAnimationNumFrames, &curCharData.runAnimationFPS, &isRunAnimationPlaying);
+	}
 
 	ImGui::End();
 }
@@ -390,8 +418,27 @@ void handlePortraitWindow()
 {
 	ImGui::Begin("Portrait");
 
-	addImageSelector("portrait", curCharData.portraitFileName, &portraitIconTexture, portraitIconWidth, portraitIconHeight,
-		false, nullptr, nullptr, nullptr, nullptr);
+	ImGui::Checkbox("Use in game portrait sprite", &curCharData.isUsingInGamePortraitSprite);
+	if (curCharData.isUsingInGamePortraitSprite)
+	{
+		if (ImGui::BeginCombo("Portrait Sprite Char Name", curCharData.inGamePortraitSpriteChar.c_str()))
+		{
+			for (const auto& [key, value] : characterDataMap)
+			{
+				const bool is_selected = curCharData.inGamePortraitSpriteChar.compare(key);
+				if (ImGui::Selectable(key.c_str(), is_selected))
+				{
+					curCharData.inGamePortraitSpriteChar = key;
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
+	else
+	{
+		addImageSelector("portrait", curCharData.portraitFileName, &portraitIconTexture, portraitIconWidth, portraitIconHeight,
+			false, nullptr, nullptr, nullptr, nullptr);
+	}
 
 	ImGui::End();
 }
@@ -400,8 +447,27 @@ void handleLargePortraitWindow()
 {
 	ImGui::Begin("Large Portrait");
 
-	addImageSelector("large portrait", curCharData.largePortraitFileName, &largePortraitIconTexture, largePortraitIconWidth, largePortraitIconHeight,
-		false, nullptr, nullptr, nullptr, nullptr);
+	ImGui::Checkbox("Use in game large portrait sprite", &curCharData.isUsingInGameLargePortraitSprite);
+	if (curCharData.isUsingInGameLargePortraitSprite)
+	{
+		if (ImGui::BeginCombo("Large Portrait Char Name", curCharData.inGameLargePortraitSpriteChar.c_str()))
+		{
+			for (const auto& [key, value] : characterDataMap)
+			{
+				const bool is_selected = curCharData.inGameLargePortraitSpriteChar.compare(key);
+				if (ImGui::Selectable(key.c_str(), is_selected))
+				{
+					curCharData.inGameLargePortraitSpriteChar = key;
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
+	else
+	{
+		addImageSelector("large portrait", curCharData.largePortraitFileName, &largePortraitIconTexture, largePortraitIconWidth, largePortraitIconHeight,
+			false, nullptr, nullptr, nullptr, nullptr);
+	}
 
 	ImGui::End();
 }
@@ -410,17 +476,40 @@ void handleSpecialAnimationWindow()
 {
 	ImGui::Begin("Special Animation");
 
-	ImGui::InputText("specialName", &curCharData.specialName);
-	ImGui::InputTextMultiline("specialDescription", &curCharData.specialDescription);
-	curCharData.specialCooldown.isDefined |= ImGui::InputInt("specialCooldown", &curCharData.specialCooldown.value);
-	curCharData.specialDamage.isDefined |= ImGui::InputDouble("specialDamage", &curCharData.specialDamage.value);
-	curCharData.specialDuration.isDefined |= ImGui::InputInt("specialDuration", &curCharData.specialDuration.value);
+	// TODO: Add a way to add actions to the special as well
 
-	addImageSelector("specialIcon", curCharData.specialIconFileName, &specialIconTexture, specialIconWidth, specialIconHeight,
-		false, nullptr, nullptr, nullptr, nullptr);
+	ImGui::Checkbox("Use in game special", &curCharData.isUsingInGameSpecial);
+	if (curCharData.isUsingInGameSpecial)
+	{
+		if (ImGui::BeginCombo("Special Char Name", curCharData.inGameSpecialChar.c_str()))
+		{
+			for (const auto& [key, value] : characterDataMap)
+			{
+				const bool is_selected = curCharData.inGameSpecialChar.compare(key);
+				if (ImGui::Selectable(key.c_str(), is_selected))
+				{
+					curCharData.inGameSpecialChar = key;
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
+	else
+	{
+		ImGui::InputText("specialName", &curCharData.specialName);
+		ImGui::InputTextMultiline("specialDescription", &curCharData.specialDescription);
+		curCharData.specialCooldown.isDefined |= ImGui::InputInt("specialCooldown", &curCharData.specialCooldown.value);
+		curCharData.specialDamage.isDefined |= ImGui::InputDouble("specialDamage", &curCharData.specialDamage.value);
+		curCharData.specialDuration.isDefined |= ImGui::InputInt("specialDuration", &curCharData.specialDuration.value);
 
-	addImageSelector("specialAnimation", curCharData.specialAnimationFileName, &specialAnimationTexture, specialAnimationWidth, specialAnimationHeight,
-		true, &specialAnimationCurFrame, &specialAnimationNumFrames, &curCharData.specialAnimationFPS, &isSpecialAnimationPlaying);
+		addImageSelector("specialIcon", curCharData.specialIconFileName, &specialIconTexture, specialIconWidth, specialIconHeight,
+			false, nullptr, nullptr, nullptr, nullptr);
+
+		addImageSelector("specialAnimation", curCharData.specialAnimationFileName, &specialAnimationTexture, specialAnimationWidth, specialAnimationHeight,
+			true, &specialAnimationCurFrame, &specialAnimationNumFrames, &curCharData.specialAnimationFPS, &isSpecialAnimationPlaying);
+
+		handleProjectileOnTrigger(curCharData.specialProjectileActionList);
+	}
 
 	ImGui::End();
 }
@@ -479,31 +568,110 @@ void handleProjectileOnTrigger(std::vector<projectileActionData>& projectileActi
 	}
 }
 
+void handleSkillOnTrigger(std::vector<skillTriggerData>& skillTriggerList)
+{
+	if (ImGui::Button("Add On Trigger"))
+	{
+		skillTriggerData curSkillActionData;
+		curSkillActionData.skillTriggerName = "newOnTrigger";
+		curSkillActionData.skillTriggerType = skillTriggerType_NONE;
+		skillTriggerList.push_back(curSkillActionData);
+	}
+	for (int j = 0; j < skillTriggerList.size(); j++)
+	{
+		auto& curSkillTrigger = skillTriggerList[j];
+		if (ImGui::TreeNode((void*)(intptr_t)j, curSkillTrigger.skillTriggerName.c_str()))
+		{
+			ImGui::InputText("skillTriggerName", &curSkillTrigger.skillTriggerName);
+			if (ImGui::BeginCombo("skillTriggerType", skillTriggerTypeMap[curSkillTrigger.skillTriggerType].c_str()))
+			{
+				for (const auto& [key, value] : skillTriggerTypeMap)
+				{
+					bool isSelectable = key == curSkillTrigger.skillTriggerType;
+					if (ImGui::Selectable(value.c_str(), isSelectable))
+					{
+						curSkillTrigger.skillTriggerType = key;
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+			if (curSkillTrigger.skillTriggerType != skillTriggerType_NONE)
+			{
+				if (ImGui::BeginCombo("triggeredActionName", curSkillTrigger.triggeredActionName.c_str()))
+				{
+					for (int k = 0; k < curCharData.actionDataList.size(); k++)
+					{
+						const bool is_selected = (curSkillTrigger.triggeredActionName.compare(curCharData.actionDataList[k].actionName) == 0);
+						if (ImGui::Selectable(curCharData.actionDataList[k].actionName.c_str(), is_selected))
+						{
+							curSkillTrigger.triggeredActionName = curCharData.actionDataList[k].actionName;
+						}
+					}
+					ImGui::EndCombo();
+				}
+			}
+
+			if (ImGui::Button("Delete onTrigger"))
+			{
+				skillTriggerList.erase(skillTriggerList.begin() + j);
+				j--;
+			}
+			ImGui::TreePop();
+		}
+	}
+}
+
 void handleWeaponLevelsWindow()
 {
 	ImGui::Begin("Weapon Levels");
 
-	for (int i = 0; i < curCharData.weaponLevelDataList.size(); i++)
+	ImGui::Checkbox("Use in game main weapon", &curCharData.isUsingInGameMainWeapon);
+
+	if (curCharData.isUsingInGameMainWeapon)
 	{
-		std::string strLevel = "Weapon Level " + std::to_string(i + 1);
-		if (ImGui::TreeNode(strLevel.c_str()))
+		if (ImGui::BeginCombo("Main Weapon Name", curCharData.inGameMainWeaponChar.c_str()))
 		{
-			auto& curWeaponLevelData = curCharData.weaponLevelDataList[i];
-			// TODO: Probably need a disable option to not input anything?
-			curWeaponLevelData.attackCount.isDefined |= ImGui::InputInt(("attackCount##" + strLevel).c_str(), &curWeaponLevelData.attackCount.value);
-			curWeaponLevelData.attackDelay.isDefined |= ImGui::InputInt(("attackDelay##" + strLevel).c_str(), &curWeaponLevelData.attackDelay.value);
-			ImGui::InputText(("attackDescription##" + strLevel).c_str(), &curWeaponLevelData.attackDescription);
-			curWeaponLevelData.attackTime.isDefined |= ImGui::InputInt(("attackTime##" + strLevel).c_str(), &curWeaponLevelData.attackTime.value);
-			curWeaponLevelData.damage.isDefined |= ImGui::InputDouble(("damage##" + strLevel).c_str(), &curWeaponLevelData.damage.value);
-			curWeaponLevelData.duration.isDefined |= ImGui::InputInt(("duration##" + strLevel).c_str(), &curWeaponLevelData.duration.value);
-			curWeaponLevelData.hitCD.isDefined |= ImGui::InputInt(("hitCD##" + strLevel).c_str(), &curWeaponLevelData.hitCD.value);
-			curWeaponLevelData.hitLimit.isDefined |= ImGui::InputInt(("hitLimit##" + strLevel).c_str(), &curWeaponLevelData.hitLimit.value);
-			curWeaponLevelData.range.isDefined |= ImGui::InputInt(("range##" + strLevel).c_str(), &curWeaponLevelData.range.value);
-			curWeaponLevelData.speed.isDefined |= ImGui::InputDouble(("speed##" + strLevel).c_str(), &curWeaponLevelData.speed.value);
+			for (const auto& [key, value] : characterDataMap)
+			{
+				const bool is_selected = curCharData.inGameMainWeaponChar.compare(key);
+				if (ImGui::Selectable(key.c_str(), is_selected))
+				{
+					curCharData.inGameMainWeaponChar = key;
+				}
+			}
+			ImGui::EndCombo();
+		}
+	}
+	else
+	{
+		ImGui::InputText("attackName", &curCharData.attackName);
 
-			handleProjectileOnTrigger(curWeaponLevelData.projectileActionList);
+		addImageSelector("attackAnimation", curCharData.attackAnimationFileName, &attackAnimationTexture, attackAnimationWidth, attackAnimationHeight,
+			true, &attackAnimationCurFrame, &attackAnimationNumFrames, &curCharData.attackAnimationFPS, &isAttackAnimationPlaying);
 
-			ImGui::TreePop();
+		for (int i = 0; i < curCharData.weaponLevelDataList.size(); i++)
+		{
+			std::string strLevel = "Weapon Level " + std::to_string(i + 1);
+			if (ImGui::TreeNode(strLevel.c_str()))
+			{
+				auto& curWeaponLevelData = curCharData.weaponLevelDataList[i];
+				// TODO: Probably need a disable option to not input anything?
+				curWeaponLevelData.attackCount.isDefined |= ImGui::InputInt(("attackCount##" + strLevel).c_str(), &curWeaponLevelData.attackCount.value);
+				curWeaponLevelData.attackDelay.isDefined |= ImGui::InputInt(("attackDelay##" + strLevel).c_str(), &curWeaponLevelData.attackDelay.value);
+				ImGui::InputText(("attackDescription##" + strLevel).c_str(), &curWeaponLevelData.attackDescription);
+				curWeaponLevelData.attackTime.isDefined |= ImGui::InputInt(("attackTime##" + strLevel).c_str(), &curWeaponLevelData.attackTime.value);
+				curWeaponLevelData.damage.isDefined |= ImGui::InputDouble(("damage##" + strLevel).c_str(), &curWeaponLevelData.damage.value);
+				curWeaponLevelData.duration.isDefined |= ImGui::InputInt(("duration##" + strLevel).c_str(), &curWeaponLevelData.duration.value);
+				curWeaponLevelData.hitCD.isDefined |= ImGui::InputInt(("hitCD##" + strLevel).c_str(), &curWeaponLevelData.hitCD.value);
+				curWeaponLevelData.hitLimit.isDefined |= ImGui::InputInt(("hitLimit##" + strLevel).c_str(), &curWeaponLevelData.hitLimit.value);
+				curWeaponLevelData.range.isDefined |= ImGui::InputInt(("range##" + strLevel).c_str(), &curWeaponLevelData.range.value);
+				curWeaponLevelData.speed.isDefined |= ImGui::InputDouble(("speed##" + strLevel).c_str(), &curWeaponLevelData.speed.value);
+
+				handleProjectileOnTrigger(curWeaponLevelData.projectileActionList);
+
+				ImGui::TreePop();
+			}
 		}
 	}
 
@@ -520,60 +688,58 @@ void handleSkillDataWindow()
 		if (ImGui::TreeNode(strLevel.c_str()))
 		{
 			auto& curSkillData = curCharData.skillDataList[i];
-			ImGui::InputText(("skillName##" + strLevel).c_str(), &curSkillData.skillName);
-			for (int j = 0; j < curSkillData.skillLevelDataList.size(); j++)
+
+			ImGui::Checkbox("Use in game skill", &curSkillData.isUsingInGameSkill);
+			if (curSkillData.isUsingInGameSkill)
 			{
-				if (ImGui::TreeNode(("Level " + std::to_string(j + 1) + "##" + strLevel).c_str()))
+				if (ImGui::BeginCombo("Skill Name", curSkillData.inGameSkillName.c_str()))
 				{
-					auto& curSkillLevel = curSkillData.skillLevelDataList[j];
-					std::string skillLevel = "##" + strLevel + " Level " + std::to_string(j + 1);
-					curSkillLevel.DRMultiplier.isDefined |= ImGui::InputDouble(("DRMMultiplier" + skillLevel).c_str(), &curSkillLevel.DRMultiplier.value);
-					curSkillLevel.healMultiplier.isDefined |= ImGui::InputDouble(("healMultiplier" + skillLevel).c_str(), &curSkillLevel.healMultiplier.value);
-					curSkillLevel.attackIncrement.isDefined |= ImGui::InputInt(("attackIncrement" + skillLevel).c_str(), &curSkillLevel.attackIncrement.value);
-					curSkillLevel.critIncrement.isDefined |= ImGui::InputInt(("critIncrement" + skillLevel).c_str(), &curSkillLevel.critIncrement.value);
-					curSkillLevel.hasteIncrement.isDefined |= ImGui::InputInt(("hasteIncrement" + skillLevel).c_str(), &curSkillLevel.hasteIncrement.value);
-					curSkillLevel.speedIncrement.isDefined |= ImGui::InputInt(("speedIncrement" + skillLevel).c_str(), &curSkillLevel.speedIncrement.value);
-					curSkillLevel.food.isDefined |= ImGui::InputDouble(("food" + skillLevel).c_str(), &curSkillLevel.food.value);
-					curSkillLevel.weaponSize.isDefined |= ImGui::InputDouble(("weaponSize" + skillLevel).c_str(), &curSkillLevel.weaponSize.value);
-					if (ImGui::TreeNode(("onTrigger" + skillLevel).c_str()))
-					{	
-						auto& curOnTriggerData = curSkillLevel.skillOnTriggerData;
-						if (ImGui::BeginCombo(("buffName" + skillLevel).c_str(), curOnTriggerData.buffName.c_str()))
+					for (const auto& [key, value] : characterDataMap)
+					{
+						for (int j = 0; j < 3; j++)
 						{
-							for (int k = 0; k < curCharData.buffDataList.size(); k++)
+							const bool is_selected = curSkillData.inGameSkillName.compare(value.perksStringArr[j]);
+							if (ImGui::Selectable(value.perksStringArr[j].c_str(), is_selected))
 							{
-								const bool is_selected = (curOnTriggerData.buffName.compare(curCharData.buffDataList[k].buffName) == 0);
-								if (ImGui::Selectable(curCharData.buffDataList[k].buffName.c_str(), is_selected))
-								{
-									curOnTriggerData.buffName = curCharData.buffDataList[k].buffName;
-								}
+								curSkillData.inGameSkillName = value.perksStringArr[j];
 							}
-							ImGui::EndCombo();
 						}
-						curOnTriggerData.probability.isDefined |= ImGui::InputInt(("probability" + skillLevel).c_str(), &curOnTriggerData.probability.value);
-						if (ImGui::BeginCombo(("onTriggerType" + skillLevel).c_str(), curOnTriggerData.onTriggerType.c_str()))
-						{
-							const char* items[] = { "NONE", "onDebuff", "onAttackCreate", "onCriticalHit", "onHeal", "onKill", "onTakeDamage", "onDodge" };
-							for (int n = 0; n < IM_ARRAYSIZE(items); n++)
-							{
-								const bool is_selected = (curOnTriggerData.onTriggerType.compare(items[n]) == 0);
-								if (ImGui::Selectable(items[n], is_selected))
-								{
-									curOnTriggerData.onTriggerType = items[n];
-								}
-							}
-							ImGui::EndCombo();
-						}
-						ImGui::TreePop();
 					}
-					ImGui::InputTextMultiline(("skillDescription" + skillLevel).c_str(), &curSkillLevel.skillDescription);
-					ImGui::TreePop();
+					ImGui::EndCombo();
 				}
 			}
+			else
+			{
+				ImGui::InputText(("skillName##" + strLevel).c_str(), &curSkillData.skillName);
+				for (int j = 0; j < curSkillData.skillLevelDataList.size(); j++)
+				{
+					if (ImGui::TreeNode(("Level " + std::to_string(j + 1) + "##" + strLevel).c_str()))
+					{
+						auto& curSkillLevel = curSkillData.skillLevelDataList[j];
+						std::string skillLevel = "##" + strLevel + " Level " + std::to_string(j + 1);
+						curSkillLevel.DRMultiplier.isDefined |= ImGui::InputDouble(("DRMMultiplier" + skillLevel).c_str(), &curSkillLevel.DRMultiplier.value);
+						curSkillLevel.healMultiplier.isDefined |= ImGui::InputDouble(("healMultiplier" + skillLevel).c_str(), &curSkillLevel.healMultiplier.value);
+						curSkillLevel.attackIncrement.isDefined |= ImGui::InputInt(("attackIncrement" + skillLevel).c_str(), &curSkillLevel.attackIncrement.value);
+						curSkillLevel.critIncrement.isDefined |= ImGui::InputInt(("critIncrement" + skillLevel).c_str(), &curSkillLevel.critIncrement.value);
+						curSkillLevel.hasteIncrement.isDefined |= ImGui::InputInt(("hasteIncrement" + skillLevel).c_str(), &curSkillLevel.hasteIncrement.value);
+						curSkillLevel.speedIncrement.isDefined |= ImGui::InputInt(("speedIncrement" + skillLevel).c_str(), &curSkillLevel.speedIncrement.value);
+						curSkillLevel.food.isDefined |= ImGui::InputDouble(("food" + skillLevel).c_str(), &curSkillLevel.food.value);
+						curSkillLevel.weaponSize.isDefined |= ImGui::InputDouble(("weaponSize" + skillLevel).c_str(), &curSkillLevel.weaponSize.value);
+						curSkillLevel.pickupRange.isDefined |= ImGui::InputDouble(("pickupRange" + skillLevel).c_str(), &curSkillLevel.pickupRange.value);
+						curSkillLevel.critMod.isDefined |= ImGui::InputDouble(("critDamage" + skillLevel).c_str(), &curSkillLevel.critMod.value);
+						curSkillLevel.bonusProjectile.isDefined |= ImGui::InputDouble(("bonusProjectile" + skillLevel).c_str(), &curSkillLevel.bonusProjectile.value);
 
-			auto& curSkillIconTextureData = curSkillData.skillIconTextureData;
-			addImageSelector("skillIcon", curSkillData.skillIconFileName, &curSkillIconTextureData.texture, curSkillIconTextureData.width, curSkillIconTextureData.height,
-				false, nullptr, nullptr, nullptr, nullptr);
+						handleSkillOnTrigger(curSkillLevel.skillTriggerList);
+						
+						ImGui::InputTextMultiline(("skillDescription" + skillLevel).c_str(), &curSkillLevel.skillDescription);
+						ImGui::TreePop();
+					}
+				}
+
+				auto& curSkillIconTextureData = curSkillData.skillIconTextureData;
+				addImageSelector("skillIcon", curSkillData.skillIconFileName, &curSkillIconTextureData.texture, curSkillIconTextureData.width, curSkillIconTextureData.height,
+					false, nullptr, nullptr, nullptr, nullptr);
+			}
 
 			ImGui::TreePop();
 		}
@@ -600,6 +766,7 @@ void handleActionDataWindow()
 		if (ImGui::TreeNode((void*)(intptr_t)i, curCharData.actionDataList[i].actionName.c_str()))
 		{
 			ImGui::InputText(("actionName" + strAppendActionNumber).c_str(), &curCharData.actionDataList[i].actionName);
+			ImGui::SliderInt("probability", &curCharData.actionDataList[i].probability, 0, 100);
 			if (ImGui::BeginCombo(("actionType" + strAppendActionNumber).c_str(), actionTypeMap[curCharData.actionDataList[i].actionType].c_str()))
 			{
 				for (const auto& [key, value] : actionTypeMap)
@@ -628,6 +795,22 @@ void handleActionDataWindow()
 						if (ImGui::Selectable(curCharData.projectileDataList[k].projectileName.c_str(), is_selected))
 						{
 							curActionProjectileData.projectileDataName = curCharData.projectileDataList[k].projectileName;
+						}
+					}
+					ImGui::EndCombo();
+				}
+			}
+			else if (curCharData.actionDataList[i].actionType == actionType_ApplyBuff)
+			{
+				auto& curActionBuffData = curCharData.actionDataList[i].actionBuffData;
+				if (ImGui::BeginCombo(("buffName" + strAppendActionNumber).c_str(), curActionBuffData.buffName.c_str()))
+				{
+					for (int k = 0; k < curCharData.buffDataList.size(); k++)
+					{
+						const bool is_selected = (curActionBuffData.buffName.compare(curCharData.buffDataList[k].buffName) == 0);
+						if (ImGui::Selectable(curCharData.buffDataList[k].buffName.c_str(), is_selected))
+						{
+							curActionBuffData.buffName = curCharData.buffDataList[k].buffName;
 						}
 					}
 					ImGui::EndCombo();
@@ -790,10 +973,6 @@ void handleImGUI()
 				}
 				ImGui::EndCombo();
 			}
-			if (ImGui::Button("Toggle Attack Animation Window"))
-			{
-				showAttackAnimationWindow = !showAttackAnimationWindow;
-			}
 			if (ImGui::Button("Toggle Buff Data Window"))
 			{
 				showBuffDataWindow = !showBuffDataWindow;
@@ -837,11 +1016,6 @@ void handleImGUI()
 		}
 
 		ImGui::End();
-
-		if (showAttackAnimationWindow)
-		{
-			handleAttackAnimationWindow();
-		}
 		
 		if (showBuffDataWindow)
 		{
@@ -1102,24 +1276,6 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 }
 
-void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, onTriggerData& outputOnTriggerData)
-{
-	try
-	{
-		inputJson.at(varName).get_to(outputOnTriggerData);
-	}
-	catch (nlohmann::json::type_error& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to onTriggerData", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to onTriggerData", e.what(), varName);
-	}
-	catch (nlohmann::json::out_of_range& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to onTriggerData", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to onTriggerData", e.what(), varName);
-	}
-}
-
 void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<buffLevelData>& outputBuffLevelDataList)
 {
 	try
@@ -1246,6 +1402,33 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, action
 	}
 }
 
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, skillTriggerTypeEnum& outputSkillTriggerTypeEnum)
+{
+	try
+	{
+		std::string jsonString;
+		inputJson.at(varName).get_to(jsonString);
+		for (const auto& [key, value] : skillTriggerTypeMap)
+		{
+			if (jsonString.compare(value) == 0)
+			{
+				outputSkillTriggerTypeEnum = key;
+				break;
+			}
+		}
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
+	}
+}
+
 void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 {
 	outputJson = nlohmann::json{
@@ -1273,8 +1456,21 @@ void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 		{ "specialAnimationFileName", inputCharData.specialAnimationFileName },
 		{ "specialDamage", inputCharData.specialDamage },
 		{ "specialDuration", inputCharData.specialDuration },
+		{ "specialProjectileActionList", inputCharData.specialProjectileActionList },
 		{ "sizeGrade", inputCharData.sizeGrade },
 		{ "weaponType", inputCharData.mainWeaponWeaponType },
+		{ "isUsingInGameMainWeapon", inputCharData.isUsingInGameMainWeapon },
+		{ "inGameMainWeaponChar", inputCharData.inGameMainWeaponChar },
+		{ "isUsingInGameIdleSprite", inputCharData.isUsingInGameIdleSprite },
+		{ "inGameIdleSpriteChar", inputCharData.inGameIdleSpriteChar },
+		{ "isUsingInGameRunSprite", inputCharData.isUsingInGameRunSprite },
+		{ "inGameRunSpriteChar", inputCharData.inGameRunSpriteChar },
+		{ "isUsingInGamePortraitSprite", inputCharData.isUsingInGamePortraitSprite },
+		{ "inGamePortraitSpriteChar", inputCharData.inGamePortraitSpriteChar },
+		{ "isUsingInGameLargePortraitSprite", inputCharData.isUsingInGameLargePortraitSprite },
+		{ "inGameLargePortraitSpriteChar", inputCharData.inGameLargePortraitSpriteChar },
+		{ "isUsingInGameSpecial", inputCharData.isUsingInGameSpecial },
+		{ "inGameSpecialChar", inputCharData.inGameSpecialChar },
 		{ "levels", inputCharData.weaponLevelDataList },
 		{ "skills", inputCharData.skillDataList },
 		{ "buffs", inputCharData.buffDataList },
@@ -1309,8 +1505,55 @@ void from_json(const nlohmann::json& inputJson, characterData& outputCharData)
 	parseJSONToVar(inputJson, "specialAnimationFileName", outputCharData.specialAnimationFileName);
 	parseJSONToVar(inputJson, "specialDamage", outputCharData.specialDamage);
 	parseJSONToVar(inputJson, "specialDuration", outputCharData.specialDuration);
+	auto& specialProjectileActionList = inputJson["specialProjectileActionList"];
+	if (specialProjectileActionList.is_array())
+	{
+		outputCharData.specialProjectileActionList = specialProjectileActionList;
+	}
 	parseJSONToVar(inputJson, "sizeGrade", outputCharData.sizeGrade);
 	parseJSONToVar(inputJson, "weaponType", outputCharData.mainWeaponWeaponType);
+	auto& isUsingInGameMainWeapon = inputJson["isUsingInGameMainWeapon"];
+	if (isUsingInGameMainWeapon.is_boolean())
+	{
+		outputCharData.isUsingInGameMainWeapon = isUsingInGameMainWeapon;
+	}
+	parseJSONToVar(inputJson, "inGameMainWeaponChar", outputCharData.inGameMainWeaponChar);
+
+	auto& isUsingInGameIdleSprite = inputJson["isUsingInGameIdleSprite"];
+	if (isUsingInGameIdleSprite.is_boolean())
+	{
+		outputCharData.isUsingInGameIdleSprite = isUsingInGameIdleSprite;
+	}
+	parseJSONToVar(inputJson, "inGameIdleSpriteChar", outputCharData.inGameIdleSpriteChar);
+
+	auto& isUsingInGameRunSprite = inputJson["isUsingInGameRunSprite"];
+	if (isUsingInGameRunSprite.is_boolean())
+	{
+		outputCharData.isUsingInGameRunSprite = isUsingInGameRunSprite;
+	}
+	parseJSONToVar(inputJson, "inGameRunSpriteChar", outputCharData.inGameRunSpriteChar);
+
+	auto& isUsingInGamePortraitSprite = inputJson["isUsingInGamePortraitSprite"];
+	if (isUsingInGamePortraitSprite.is_boolean())
+	{
+		outputCharData.isUsingInGamePortraitSprite = isUsingInGamePortraitSprite;
+	}
+	parseJSONToVar(inputJson, "inGamePortraitSpriteChar", outputCharData.inGamePortraitSpriteChar);
+
+	auto& isUsingInGameLargePortraitSprite = inputJson["isUsingInGameLargePortraitSprite"];
+	if (isUsingInGameLargePortraitSprite.is_boolean())
+	{
+		outputCharData.isUsingInGameLargePortraitSprite = isUsingInGameLargePortraitSprite;
+	}
+	parseJSONToVar(inputJson, "inGameLargePortraitSpriteChar", outputCharData.inGameLargePortraitSpriteChar);
+
+	auto& isUsingInGameSpecial = inputJson["isUsingInGameSpecial"];
+	if (isUsingInGameSpecial.is_boolean())
+	{
+		outputCharData.isUsingInGameSpecial = isUsingInGameSpecial;
+	}
+	parseJSONToVar(inputJson, "inGameSpecialChar", outputCharData.inGameSpecialChar);
+
 	parseJSONToVar(inputJson, "levels", outputCharData.weaponLevelDataList);
 	parseJSONToVar(inputJson, "skills", outputCharData.skillDataList);
 	parseJSONToVar(inputJson, "buffs", outputCharData.buffDataList);
@@ -1321,6 +1564,8 @@ void from_json(const nlohmann::json& inputJson, characterData& outputCharData)
 void to_json(nlohmann::json& outputJson, const skillData& inputSkillData)
 {
 	outputJson = nlohmann::json{
+		{ "isUsingInGameSkill", inputSkillData.isUsingInGameSkill },
+		{ "inGameSkillName", inputSkillData.inGameSkillName },
 		{ "levels", inputSkillData.skillLevelDataList },
 		{ "skillName", inputSkillData.skillName },
 		{ "skillIconFileName", inputSkillData.skillIconFileName },
@@ -1329,6 +1574,12 @@ void to_json(nlohmann::json& outputJson, const skillData& inputSkillData)
 
 void from_json(const nlohmann::json& inputJson, skillData& outputSkillData)
 {
+	auto& isUsingInGameSkill = inputJson["isUsingInGameSkill"];
+	if (isUsingInGameSkill.is_boolean())
+	{
+		outputSkillData.isUsingInGameSkill = isUsingInGameSkill;
+	}
+	parseJSONToVar(inputJson, "inGameSkillName", outputSkillData.inGameSkillName);
 	parseJSONToVar(inputJson, "levels", outputSkillData.skillLevelDataList);
 	parseJSONToVar(inputJson, "skillName", outputSkillData.skillName);
 	parseJSONToVar(inputJson, "skillIconFileName", outputSkillData.skillIconFileName);
@@ -1346,7 +1597,10 @@ void to_json(nlohmann::json& outputJson, const skillLevelData& inputSkillLevelDa
 		{ "healMultiplier", inputSkillLevelData.healMultiplier },
 		{ "food", inputSkillLevelData.food },
 		{ "weaponSize", inputSkillLevelData.weaponSize },
-		{ "skillOnTriggerData", inputSkillLevelData.skillOnTriggerData },
+		{ "pickupRange", inputSkillLevelData.pickupRange },
+		{ "critMod", inputSkillLevelData.critMod },
+		{ "bonusProjectile", inputSkillLevelData.bonusProjectile },
+		{ "skillTriggerList", inputSkillLevelData.skillTriggerList },
 	};
 }
 
@@ -1361,7 +1615,14 @@ void from_json(const nlohmann::json& inputJson, skillLevelData& outputSkillLevel
 	parseJSONToVar(inputJson, "healMultiplier", outputSkillLevelData.healMultiplier);
 	parseJSONToVar(inputJson, "food", outputSkillLevelData.food);
 	parseJSONToVar(inputJson, "weaponSize", outputSkillLevelData.weaponSize);
-	parseJSONToVar(inputJson, "skillOnTriggerData", outputSkillLevelData.skillOnTriggerData);
+	parseJSONToVar(inputJson, "pickupRange", outputSkillLevelData.pickupRange);
+	parseJSONToVar(inputJson, "critMod", outputSkillLevelData.critMod);
+	parseJSONToVar(inputJson, "bonusProjectile", outputSkillLevelData.bonusProjectile);
+	auto& skillTriggerList = inputJson["skillTriggerList"];
+	if (skillTriggerList.is_array())
+	{
+		from_json(skillTriggerList, outputSkillLevelData.skillTriggerList);
+	}
 }
 
 void to_json(nlohmann::json& outputJson, const weaponLevelData& inputWeaponLevelData)
@@ -1411,6 +1672,9 @@ void to_json(nlohmann::json& outputJson, const buffLevelData& inputBuffLevelData
 		{ "healMultiplier", inputBuffLevelData.healMultiplier },
 		{ "food", inputBuffLevelData.food },
 		{ "weaponSize", inputBuffLevelData.weaponSize },
+		{ "pickupRange", inputBuffLevelData.pickupRange },
+		{ "critMod", inputBuffLevelData.critMod },
+		{ "bonusProjectile", inputBuffLevelData.bonusProjectile },
 		{ "maxStacks", inputBuffLevelData.maxStacks },
 		{ "timer", inputBuffLevelData.timer },
 	};
@@ -1426,6 +1690,9 @@ void from_json(const nlohmann::json& inputJson, buffLevelData& outputBuffLevelDa
 	parseJSONToVar(inputJson, "healMultiplier", outputBuffLevelData.healMultiplier);
 	parseJSONToVar(inputJson, "food", outputBuffLevelData.food);
 	parseJSONToVar(inputJson, "weaponSize", outputBuffLevelData.weaponSize);
+	parseJSONToVar(inputJson, "pickupRange", outputBuffLevelData.pickupRange);
+	parseJSONToVar(inputJson, "critMod", outputBuffLevelData.critMod);
+	parseJSONToVar(inputJson, "bonusProjectile", outputBuffLevelData.bonusProjectile);
 	parseJSONToVar(inputJson, "maxStacks", outputBuffLevelData.maxStacks);
 	parseJSONToVar(inputJson, "timer", outputBuffLevelData.timer);
 }
@@ -1446,20 +1713,20 @@ void from_json(const nlohmann::json& inputJson, buffData& outputBuffData)
 	parseJSONToVar(inputJson, "buffIconFileName", outputBuffData.buffIconFileName);
 }
 
-void to_json(nlohmann::json& outputJson, const onTriggerData& inputOnTriggerData)
+void to_json(nlohmann::json& outputJson, const skillTriggerData& inputSkillTriggerData)
 {
 	outputJson = nlohmann::json{
-		{ "onTriggerType", inputOnTriggerData.onTriggerType },
-		{ "buffName", inputOnTriggerData.buffName },
-		{ "probability", inputOnTriggerData.probability },
+		{ "skillTriggerName", inputSkillTriggerData.skillTriggerName },
+		{ "skillTriggerType", skillTriggerTypeMap[inputSkillTriggerData.skillTriggerType] },
+		{ "triggeredActionName", inputSkillTriggerData.triggeredActionName },
 	};
 }
 
-void from_json(const nlohmann::json& inputJson, onTriggerData& outputOnTriggerData)
+void from_json(const nlohmann::json& inputJson, skillTriggerData& outputSkillTriggerData)
 {
-	parseJSONToVar(inputJson, "onTriggerType", outputOnTriggerData.onTriggerType);
-	parseJSONToVar(inputJson, "buffName", outputOnTriggerData.buffName);
-	parseJSONToVar(inputJson, "probability", outputOnTriggerData.probability);
+	parseJSONToVar(inputJson, "skillTriggerName", outputSkillTriggerData.skillTriggerName);
+	parseJSONToVar(inputJson, "skillTriggerType", outputSkillTriggerData.skillTriggerType);
+	parseJSONToVar(inputJson, "triggeredActionName", outputSkillTriggerData.triggeredActionName);
 }
 
 void to_json(nlohmann::json& outputJson, const JSONDouble& inputJSONDoubleData)
@@ -1540,11 +1807,28 @@ void from_json(const nlohmann::json& inputJson, actionProjectile& outputActionPr
 	}
 }
 
+void to_json(nlohmann::json& outputJson, const actionBuff& inputActionBuff)
+{
+	outputJson = nlohmann::json{
+		{ "buffName", inputActionBuff.buffName },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, actionBuff& outputActionBuff)
+{
+	auto& buffName = inputJson["buffName"];
+	if (buffName.is_string())
+	{
+		outputActionBuff.buffName = buffName;
+	}
+}
+
 void to_json(nlohmann::json& outputJson, const actionData& inputActionData)
 {
 	outputJson = nlohmann::json{
 		{ "actionName", inputActionData.actionName },
 		{ "actionType", actionTypeMap[inputActionData.actionType] },
+		{ "probability", inputActionData.probability },
 //		{ "nextActionList", inputActionData.nextActionList },
 	};
 	if (inputActionData.actionType == actionType_SpawnProjectile)
@@ -1553,16 +1837,31 @@ void to_json(nlohmann::json& outputJson, const actionData& inputActionData)
 		to_json(tempJson, inputActionData.actionProjectileData);
 		outputJson["actionProjectileData"] = tempJson;
 	}
+	else if (inputActionData.actionType == actionType_ApplyBuff)
+	{
+		nlohmann::json tempJson;
+		to_json(tempJson, inputActionData.actionBuffData);
+		outputJson["actionBuffData"] = tempJson;
+	}
 }
 
 void from_json(const nlohmann::json& inputJson, actionData& outputActionData)
 {
 	parseJSONToVar(inputJson, "actionName", outputActionData.actionName);
 	parseJSONToVar(inputJson, "actionType", outputActionData.actionType);
+	auto& probability = inputJson["probability"];
+	if (probability.is_number_integer())
+	{
+		outputActionData.probability = probability;
+	}
 //	parseJSONToVar(inputJson, "nextActionList", outputActionData.nextActionList);
 	if (outputActionData.actionType == actionType_SpawnProjectile)
 	{
 		from_json(inputJson["actionProjectileData"], outputActionData.actionProjectileData);
+	}
+	else if (outputActionData.actionType == actionType_ApplyBuff)
+	{
+		from_json(inputJson["actionBuffData"], outputActionData.actionBuffData);
 	}
 }
 

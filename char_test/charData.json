@@ -13,7 +13,8 @@
                 "relativeSpawnPosY": null,
                 "spawnDir": 0.0
             },
-            "actionType": "SpawnProjectile"
+            "actionType": "SpawnProjectile",
+            "probability": 100
         },
         {
             "actionName": "spawnProj0",
@@ -24,7 +25,8 @@
                 "relativeSpawnPosY": null,
                 "spawnDir": null
             },
-            "actionType": "SpawnProjectile"
+            "actionType": "SpawnProjectile",
+            "probability": 100
         },
         {
             "actionName": "spawnProj1",
@@ -35,7 +37,8 @@
                 "relativeSpawnPosY": null,
                 "spawnDir": 90.0
             },
-            "actionType": "SpawnProjectile"
+            "actionType": "SpawnProjectile",
+            "probability": 100
         },
         {
             "actionName": "spawnProj2",
@@ -46,7 +49,8 @@
                 "relativeSpawnPosY": null,
                 "spawnDir": 180.0
             },
-            "actionType": "SpawnProjectile"
+            "actionType": "SpawnProjectile",
+            "probability": 100
         },
         {
             "actionName": "spawnProj3",
@@ -57,7 +61,40 @@
                 "relativeSpawnPosY": null,
                 "spawnDir": 270.0
             },
-            "actionType": "SpawnProjectile"
+            "actionType": "SpawnProjectile",
+            "probability": 100
+        },
+        {
+            "actionBuffData": {
+                "buffName": "test1"
+            },
+            "actionName": "newAction",
+            "actionType": "ApplyBuff",
+            "probability": 100
+        },
+        {
+            "actionBuffData": {
+                "buffName": "test1"
+            },
+            "actionName": "critBuff1",
+            "actionType": "ApplyBuff",
+            "probability": 10
+        },
+        {
+            "actionBuffData": {
+                "buffName": "test1"
+            },
+            "actionName": "critBuff2",
+            "actionType": "ApplyBuff",
+            "probability": 20
+        },
+        {
+            "actionBuffData": {
+                "buffName": "test1"
+            },
+            "actionName": "critBuff3",
+            "actionType": "ApplyBuff",
+            "probability": 50
         }
     ],
     "attackAnimationFPS": 25,
@@ -73,11 +110,14 @@
                 {
                     "DR": null,
                     "attackIncrement": null,
+                    "bonusProjectile": 0.0,
                     "critIncrement": 10,
+                    "critMod": 0.0,
                     "food": null,
                     "hasteIncrement": null,
                     "healMultiplier": null,
                     "maxStacks": 10,
+                    "pickupRange": 0.0,
                     "speedIncrement": null,
                     "timer": 300,
                     "weaponSize": null
@@ -88,6 +128,18 @@
     "charName": "test",
     "idleAnimationFPS": 4,
     "idleAnimationFileName": "idleBae_strip4.png",
+    "inGameIdleSpriteChar": "marine",
+    "inGameLargePortraitSpriteChar": "marine",
+    "inGameMainWeaponChar": "pekora",
+    "inGamePortraitSpriteChar": "marine",
+    "inGameRunSpriteChar": "marine",
+    "inGameSpecialChar": "flare",
+    "isUsingInGameIdleSprite": true,
+    "isUsingInGameLargePortraitSprite": true,
+    "isUsingInGameMainWeapon": false,
+    "isUsingInGamePortraitSprite": false,
+    "isUsingInGameRunSprite": false,
+    "isUsingInGameSpecial": false,
     "largePortraitFileName": "guraLargePort.png",
     "levels": [
         {
@@ -277,52 +329,69 @@
     "sizeGrade": 3,
     "skills": [
         {
+            "inGameSkillName": "MarineSmell",
+            "isUsingInGameSkill": false,
             "levels": [
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": 10,
+                    "critMod": null,
                     "food": null,
                     "hasteIncrement": null,
                     "healMultiplier": null,
-                    "skillDescription": "On kill, 10% chance to give a 10% crit buff for 3 seconds",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "onTakeDamage",
-                        "probability": 10
-                    },
+                    "pickupRange": null,
+                    "skillDescription": "On kill, 10% chance to give a 10% crit buff for 5 seconds",
+                    "skillTriggerList": [
+                        {
+                            "skillTriggerName": "newOnTrigger",
+                            "skillTriggerType": "onKill",
+                            "triggeredActionName": "critBuff1"
+                        }
+                    ],
                     "speedIncrement": null,
                     "weaponSize": null
                 },
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": 10,
+                    "critMod": null,
                     "food": null,
                     "hasteIncrement": null,
                     "healMultiplier": null,
-                    "skillDescription": "On kill, 20% chance to give a 10% crit buff for 3 seconds",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "onDodge",
-                        "probability": 20
-                    },
+                    "pickupRange": null,
+                    "skillDescription": "On kill, 20% chance to give a 10% crit buff for 5 seconds",
+                    "skillTriggerList": [
+                        {
+                            "skillTriggerName": "newOnTrigger",
+                            "skillTriggerType": "onKill",
+                            "triggeredActionName": "critBuff2"
+                        }
+                    ],
                     "speedIncrement": null,
                     "weaponSize": null
                 },
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": 10,
+                    "critMod": null,
                     "food": null,
                     "hasteIncrement": null,
                     "healMultiplier": null,
-                    "skillDescription": "On kill, 50% chance to give a 10% crit buff for 3 seconds",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "onTakeDamage",
-                        "probability": 50
-                    },
+                    "pickupRange": null,
+                    "skillDescription": "On kill, 50% chance to give a 10% crit buff for 5 seconds",
+                    "skillTriggerList": [
+                        {
+                            "skillTriggerName": "newOnTrigger",
+                            "skillTriggerType": "onKill",
+                            "triggeredActionName": "critBuff3"
+                        }
+                    ],
                     "speedIncrement": null,
                     "weaponSize": null
                 }
@@ -331,52 +400,51 @@
             "skillName": "test1"
         },
         {
+            "inGameSkillName": "PirateCaptain",
+            "isUsingInGameSkill": false,
             "levels": [
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": 4.0,
                     "critIncrement": null,
+                    "critMod": 0.5,
                     "food": null,
                     "hasteIncrement": 20,
                     "healMultiplier": null,
-                    "skillDescription": "Increases haste by 20%",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "NONE",
-                        "probability": null
-                    },
+                    "pickupRange": 200.0,
+                    "skillDescription": "Increases haste by 20%, pickupRange by 200%, critDamage by 50%, and bonusProj by 4",
+                    "skillTriggerList": [],
                     "speedIncrement": null,
                     "weaponSize": null
                 },
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": null,
+                    "critMod": null,
                     "food": null,
                     "hasteIncrement": 50,
                     "healMultiplier": null,
+                    "pickupRange": null,
                     "skillDescription": "Increases haste by 50%",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "NONE",
-                        "probability": null
-                    },
+                    "skillTriggerList": [],
                     "speedIncrement": null,
                     "weaponSize": null
                 },
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": null,
+                    "critMod": null,
                     "food": null,
                     "hasteIncrement": 100,
                     "healMultiplier": null,
+                    "pickupRange": null,
                     "skillDescription": "Increases haste by 100%",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "NONE",
-                        "probability": null
-                    },
+                    "skillTriggerList": [],
                     "speedIncrement": null,
                     "weaponSize": null
                 }
@@ -385,52 +453,51 @@
             "skillName": "test2"
         },
         {
+            "inGameSkillName": "Lust",
+            "isUsingInGameSkill": false,
             "levels": [
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": null,
+                    "critMod": null,
                     "food": 0.2,
                     "hasteIncrement": null,
                     "healMultiplier": null,
+                    "pickupRange": null,
                     "skillDescription": "Increases food drop",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "NONE",
-                        "probability": null
-                    },
+                    "skillTriggerList": [],
                     "speedIncrement": null,
                     "weaponSize": null
                 },
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": null,
+                    "critMod": null,
                     "food": 0.6,
                     "hasteIncrement": null,
                     "healMultiplier": null,
+                    "pickupRange": null,
                     "skillDescription": "Massively increases food drop",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "NONE",
-                        "probability": null
-                    },
+                    "skillTriggerList": [],
                     "speedIncrement": null,
                     "weaponSize": null
                 },
                 {
                     "DRMultiplier": null,
                     "attackIncrement": null,
+                    "bonusProjectile": null,
                     "critIncrement": null,
+                    "critMod": null,
                     "food": 1.0,
                     "hasteIncrement": null,
                     "healMultiplier": null,
+                    "pickupRange": null,
                     "skillDescription": "Guarantees food drop",
-                    "skillOnTriggerData": {
-                        "buffName": "test1",
-                        "onTriggerType": "NONE",
-                        "probability": null
-                    },
+                    "skillTriggerList": [],
                     "speedIncrement": null,
                     "weaponSize": null
                 }
@@ -447,5 +514,12 @@
     "specialDuration": 55,
     "specialIconFileName": "kaelaSpecial.png",
     "specialName": "testSpecial",
+    "specialProjectileActionList": [
+        {
+            "projectileActionName": "newOnTrigger",
+            "projectileActionTriggerType": "OnDestroy",
+            "triggeredActionName": "spawnProj0"
+        }
+    ],
     "weaponType": "Multishot"
 }

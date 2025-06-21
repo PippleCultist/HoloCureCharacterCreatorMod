@@ -16,13 +16,16 @@ struct skillLevelData;
 struct weaponLevelData;
 struct buffLevelData;
 struct buffData;
-struct onTriggerData;
+struct skillTriggerData;
 struct JSONDouble;
 struct JSONInt;
 struct actionProjectile;
+struct actionBuff;
 struct actionData;
 struct projectileActionData;
 struct projectileData;
+
+void handleProjectileOnTrigger(std::vector<projectileActionData>& projectileActionList);
 
 void to_json(nlohmann::json& outputJson, const characterData& inputCharData);
 void from_json(const nlohmann::json& inputJson, characterData& outputCharData);
@@ -36,14 +39,16 @@ void to_json(nlohmann::json& outputJson, const buffLevelData& inputBuffLevelData
 void from_json(const nlohmann::json& inputJson, buffLevelData& outputBuffLevelData);
 void to_json(nlohmann::json& outputJson, const buffData& inputBuffData);
 void from_json(const nlohmann::json& inputJson, buffData& outputBuffData);
-void to_json(nlohmann::json& outputJson, const onTriggerData& inputOnTriggerData);
-void from_json(const nlohmann::json& inputJson, onTriggerData& outputOnTriggerData);
+void to_json(nlohmann::json& outputJson, const skillTriggerData& inputSkillTriggerData);
+void from_json(const nlohmann::json& inputJson, skillTriggerData& outputSkillTriggerData);
 void to_json(nlohmann::json& outputJson, const JSONDouble& inputJSONDoubleData);
 void from_json(const nlohmann::json& inputJson, JSONDouble& outputJSONDoubleData);
 void to_json(nlohmann::json& outputJson, const JSONInt& inputJSONIntData);
 void from_json(const nlohmann::json& inputJson, JSONInt& outputJSONIntData);
 void to_json(nlohmann::json& outputJson, const actionProjectile& inputActionProjectile);
 void from_json(const nlohmann::json& inputJson, actionProjectile& outputActionProjectile);
+void to_json(nlohmann::json& outputJson, const actionBuff& inputActionBuff);
+void from_json(const nlohmann::json& inputJson, actionBuff& outputActionBuff);
 void to_json(nlohmann::json& outputJson, const actionData& inputActionData);
 void from_json(const nlohmann::json& inputJson, actionData& outputActionData);
 void to_json(nlohmann::json& outputJson, const projectileActionData& inputProjectileActionData);
@@ -122,11 +127,35 @@ struct weaponLevelData
 	std::vector<projectileActionData> projectileActionList;
 };
 
-struct onTriggerData
+enum skillTriggerTypeEnum
 {
-	std::string onTriggerType;
-	std::string buffName;
-	JSONInt probability;
+	skillTriggerType_NONE,
+	skillTriggerType_OnDebuff,
+	skillTriggerType_OnAttackCreate,
+	skillTriggerType_OnCriticalHit,
+	skillTriggerType_OnHeal,
+	skillTriggerType_OnKill,
+	skillTriggerType_OnTakeDamage,
+	skillTriggerType_OnDodge,
+};
+
+static std::unordered_map<skillTriggerTypeEnum, std::string> skillTriggerTypeMap
+{
+	{ skillTriggerType_NONE, "NONE" },
+	{ skillTriggerType_OnDebuff, "onDebuff" },
+	{ skillTriggerType_OnAttackCreate, "onAttackCreate" },
+	{ skillTriggerType_OnCriticalHit, "onCriticalHit" },
+	{ skillTriggerType_OnHeal, "onHeal" },
+	{ skillTriggerType_OnKill, "onKill" },
+	{ skillTriggerType_OnTakeDamage, "onTakeDamage" },
+	{ skillTriggerType_OnDodge, "onDodge" },
+};
+
+struct skillTriggerData
+{
+	std::string skillTriggerName;
+	skillTriggerTypeEnum skillTriggerType;
+	std::string triggeredActionName;
 };
 
 struct skillLevelData
@@ -140,17 +169,23 @@ struct skillLevelData
 	JSONDouble healMultiplier;
 	JSONDouble food;
 	JSONDouble weaponSize;
-	onTriggerData skillOnTriggerData;
+	JSONDouble pickupRange;
+	JSONDouble critMod;
+	JSONDouble bonusProjectile;
+	std::vector<skillTriggerData> skillTriggerList;
 };
 
 struct skillData
 {
+	bool isUsingInGameSkill;
+	std::string inGameSkillName;
+
 	std::vector<skillLevelData> skillLevelDataList;
 	std::string skillName;
 	std::string skillIconFileName;
 	TextureData skillIconTextureData;
 
-	skillData()
+	skillData(): isUsingInGameSkill(false)
 	{
 		for (int i = 0; i < 3; i++)
 		{
@@ -169,6 +204,9 @@ struct buffLevelData
 	JSONDouble healMultiplier;
 	JSONDouble food;
 	JSONDouble weaponSize;
+	JSONDouble pickupRange;
+	JSONDouble critMod;
+	JSONDouble bonusProjectile;
 	JSONInt maxStacks;
 	JSONInt timer;
 };
@@ -189,16 +227,23 @@ struct actionProjectile
 	std::string projectileDataName;
 };
 
+struct actionBuff
+{
+	std::string buffName;
+};
+
 enum actionTypeEnum
 {
 	actionType_NONE,
 	actionType_SpawnProjectile,
+	actionType_ApplyBuff,
 };
 
 static std::unordered_map<actionTypeEnum, std::string> actionTypeMap
 {
 	{ actionType_NONE, "NONE" },
 	{ actionType_SpawnProjectile, "SpawnProjectile" },
+	{ actionType_ApplyBuff, "ApplyBuff" },
 };
 
 struct actionData
@@ -206,7 +251,13 @@ struct actionData
 	std::string actionName;
 	actionTypeEnum actionType;
 //	std::vector<std::string> nextActionList;
+	int probability;
 	actionProjectile actionProjectileData;
+	actionBuff actionBuffData;
+
+	actionData() : actionType(actionType_NONE), probability(100)
+	{
+	}
 };
 
 struct projectileData
@@ -253,15 +304,30 @@ struct characterData
 	std::string specialAnimationFileName;
 	JSONDouble specialDamage;
 	JSONInt specialDuration;
+	std::vector<projectileActionData> specialProjectileActionList;
 	JSONInt sizeGrade;
 	std::string mainWeaponWeaponType;
+	bool isUsingInGameMainWeapon;
+	std::string inGameMainWeaponChar;
+	bool isUsingInGameIdleSprite;
+	std::string inGameIdleSpriteChar;
+	bool isUsingInGameRunSprite;
+	std::string inGameRunSpriteChar;
+	bool isUsingInGamePortraitSprite;
+	std::string inGamePortraitSpriteChar;
+	bool isUsingInGameLargePortraitSprite;
+	std::string inGameLargePortraitSpriteChar;
+	bool isUsingInGameSpecial;
+	std::string inGameSpecialChar;
+
 	std::vector<weaponLevelData> weaponLevelDataList;
 	std::vector<skillData> skillDataList;
 	std::vector<buffData> buffDataList;
 	std::vector<actionData> actionDataList;
 	std::vector<projectileData> projectileDataList;
 
-	characterData()
+	characterData() : isUsingInGameMainWeapon(false), isUsingInGameIdleSprite(false), isUsingInGameRunSprite(false), isUsingInGamePortraitSprite(false),
+		isUsingInGameLargePortraitSprite(false), isUsingInGameSpecial(false)
 	{
 		idleAnimationFPS.isDefined = true;
 		idleAnimationFPS.value = 4;

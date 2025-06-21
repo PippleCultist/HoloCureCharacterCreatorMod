@@ -85,6 +85,23 @@
 	DO(direction) \
 	DO(x) \
 	DO(y) \
+	DO(port) \
+	DO(large_port) \
+	DO(sprite1) \
+	DO(sprite2) \
+	DO(sprite3) \
+	DO(attackIcon) \
+	DO(attack) \
+	DO(attackDesc) \
+	DO(specIcon) \
+	DO(specID) \
+	DO(specName) \
+	DO(specDesc) \
+	DO(specCD) \
+	DO(perks) \
+	DO(pickupRange) \
+	DO(CritMod) \
+	DO(bonusProjectiles) \
 
 #define MAKE_ENUM(VAR) GML_ ## VAR,
 enum VariableNames
