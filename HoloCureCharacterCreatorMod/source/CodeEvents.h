@@ -41,3 +41,4 @@ void AttackControllerOther11After(std::tuple<CInstance*, CInstance*, CCode*, int
 void PlayerManagerOther22After(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args);
 void AttackCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args);
 void AttackDestroyBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args);
+void PlayerStepBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args);

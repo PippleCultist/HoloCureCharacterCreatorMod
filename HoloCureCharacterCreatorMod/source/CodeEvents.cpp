@@ -2,6 +2,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "CommonFunctions.h"
 #include "CodeEvents.h"
+#include "ScriptFunctions.h"
 #include "Menu.h"
 #include "HoloCureMenuInterface/HoloCureMenuInterface.h"
 #include "imgui/imgui.h"
@@ -9,12 +10,18 @@
 #include "imgui/imgui_impl_win32.h"
 #include "stb_image/stb_image.h"
 #include <random>
+#include <queue>
 
 extern CallbackManagerInterface* callbackManagerInterfacePtr;
 extern YYGML_PushContextStack yyGMLPushContextStack;
 extern YYGML_YYSetScriptRef yyGMLYYSetScriptRef;
 extern YYGML_PopContextStack yyGMLPopContextStack;
 extern RValue lastStructVarGetName;
+extern std::string playingCharName;
+extern std::unordered_map<std::string, std::vector<buffData>> buffDataListMap;
+extern std::unordered_map<std::string, std::vector<actionData>> actionDataListMap;
+extern std::unordered_map<std::string, std::vector<projectileData>> projectileDataListMap;
+extern int curFrameNum;
 
 extern HWND gameWindow;
 
@@ -51,10 +58,32 @@ struct charSpriteData
 	std::unordered_map<std::string, std::shared_ptr<spriteData>> projectileAnimationPtrMap;
 };
 
+struct actionQueueData
+{
+	CInstance* parentInstance;
+	std::string triggeredActionName;
+
+	actionQueueData(CInstance* parentInstance, std::string triggeredActionName) : parentInstance(parentInstance), triggeredActionName(triggeredActionName)
+	{
+	}
+};
+
+struct actionQueueDataComp
+{
+	bool operator()(
+		std::pair<int, actionQueueData> &a,
+		std::pair<int, actionQueueData> &b
+		)
+	{
+		return a.first > b.first;
+	}
+};
+
 std::unordered_map<std::string, charSpriteData> charSpriteMap;
 std::unordered_map<std::string, characterData> charDataMap;
 std::vector<std::string> charNameList;
 std::unordered_map<std::string, characterDataStruct> characterDataMap;
+std::priority_queue<std::pair<int, actionQueueData>, std::vector<std::pair<int, actionQueueData>>, actionQueueDataComp> actionQueue;
 
 bool hasBackedUpCharacterList = false;
 bool isInCharSelectDraw = false;
@@ -724,59 +753,54 @@ RValue& buffApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int nu
 	RValue buffConfig = *Args[1];
 	RValue buffName = getInstanceVariable(buffConfig, GML_buffName);
 	RValue playerCharacter = *Args[0];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
 	RValue stacks = getInstanceVariable(buffConfig, GML_stacks);
-	auto& charData = charDataMap[playerCharName.ToString()];
 
-	for (auto& buffData : charData.buffDataList)
+	auto& curBuffDataList = buffDataListMap[buffName.ToString()];
+	for (auto& buffData : curBuffDataList)
 	{
-		if (buffName.ToString().compare(buffData.buffName) == 0)
+		if (buffData.levels[0].attackIncrement.isDefined)
 		{
-			if (buffData.levels[0].attackIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real + buffData.levels[0].attackIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].critIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).m_Real + buffData.levels[0].critIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].hasteIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).m_Real + buffData.levels[0].hasteIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].speedIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real + buffData.levels[0].speedIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].DRMultiplier.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).m_Real * buffData.levels[0].DRMultiplier.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].healMultiplier.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).m_Real + buffData.levels[0].healMultiplier.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].food.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).m_Real + buffData.levels[0].food.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].weaponSize.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).m_Real + buffData.levels[0].weaponSize.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].pickupRange.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).m_Real + buffData.levels[0].pickupRange.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].critMod.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).m_Real + buffData.levels[0].critMod.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].bonusProjectile.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).m_Real + buffData.levels[0].bonusProjectile.value * stacks.m_Real);
-			}
-			break;
+			setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real + buffData.levels[0].attackIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].critIncrement.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).m_Real + buffData.levels[0].critIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].hasteIncrement.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).m_Real + buffData.levels[0].hasteIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].speedIncrement.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real + buffData.levels[0].speedIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].DRMultiplier.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).m_Real * buffData.levels[0].DRMultiplier.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].healMultiplier.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).m_Real + buffData.levels[0].healMultiplier.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].food.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).m_Real + buffData.levels[0].food.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].weaponSize.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).m_Real + buffData.levels[0].weaponSize.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].pickupRange.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).m_Real + buffData.levels[0].pickupRange.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].critMod.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).m_Real + buffData.levels[0].critMod.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].bonusProjectile.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).m_Real + buffData.levels[0].bonusProjectile.value * stacks.m_Real);
 		}
 	}
 
@@ -788,59 +812,54 @@ RValue& buffRemove(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 	RValue buffConfig = *Args[1];
 	RValue buffName = getInstanceVariable(buffConfig, GML_buffName);
 	RValue playerCharacter = *Args[0];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
 	RValue stacks = getInstanceVariable(buffConfig, GML_stacks);
-	auto& charData = charDataMap[std::string(playerCharName.ToString())];
 
-	for (auto& buffData : charData.buffDataList)
+	auto& curBuffDataList = buffDataListMap[buffName.ToString()];
+	for (auto& buffData : curBuffDataList)
 	{
-		if (buffName.ToString().compare(buffData.buffName) == 0)
+		if (buffData.levels[0].attackIncrement.isDefined)
 		{
-			if (buffData.levels[0].attackIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real - buffData.levels[0].attackIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].critIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).m_Real - buffData.levels[0].critIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].hasteIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).m_Real - buffData.levels[0].hasteIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].speedIncrement.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real - buffData.levels[0].speedIncrement.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].DRMultiplier.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).m_Real / (buffData.levels[0].DRMultiplier.value * stacks.m_Real));
-			}
-			if (buffData.levels[0].healMultiplier.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).m_Real - buffData.levels[0].healMultiplier.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].food.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).m_Real - buffData.levels[0].food.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].weaponSize.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).m_Real - buffData.levels[0].weaponSize.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].pickupRange.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).m_Real - buffData.levels[0].pickupRange.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].critMod.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).m_Real - buffData.levels[0].critMod.value * stacks.m_Real);
-			}
-			if (buffData.levels[0].bonusProjectile.isDefined)
-			{
-				setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).m_Real - buffData.levels[0].bonusProjectile.value * stacks.m_Real);
-			}
-			break;
+			setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real - buffData.levels[0].attackIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].critIncrement.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).m_Real - buffData.levels[0].critIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].hasteIncrement.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).m_Real - buffData.levels[0].hasteIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].speedIncrement.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real - buffData.levels[0].speedIncrement.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].DRMultiplier.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).m_Real / (buffData.levels[0].DRMultiplier.value * stacks.m_Real));
+		}
+		if (buffData.levels[0].healMultiplier.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).m_Real - buffData.levels[0].healMultiplier.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].food.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).m_Real - buffData.levels[0].food.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].weaponSize.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).m_Real - buffData.levels[0].weaponSize.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].pickupRange.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).m_Real - buffData.levels[0].pickupRange.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].critMod.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).m_Real - buffData.levels[0].critMod.value * stacks.m_Real);
+		}
+		if (buffData.levels[0].bonusProjectile.isDefined)
+		{
+			setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).m_Real - buffData.levels[0].bonusProjectile.value * stacks.m_Real);
 		}
 	}
 	return ReturnValue;
@@ -849,8 +868,7 @@ RValue& buffRemove(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 RValue& onDebuff(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[0];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	return ReturnValue;
 }
@@ -858,8 +876,7 @@ RValue& onDebuff(CInstance* Self, CInstance* Other, RValue& ReturnValue, int num
 RValue& onAttackCreate(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[0];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	return ReturnValue;
 }
@@ -868,8 +885,7 @@ RValue& onCriticalHit(CInstance* Self, CInstance* Other, RValue& ReturnValue, in
 {
 	// TODO: Maybe make it so that it can target the attack instead of the player?
 	RValue playerCharacter = *Args[0];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[3];
 	return ReturnValue;
@@ -878,8 +894,7 @@ RValue& onCriticalHit(CInstance* Self, CInstance* Other, RValue& ReturnValue, in
 RValue& onHeal(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[1];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[0];
 	return ReturnValue;
@@ -888,8 +903,7 @@ RValue& onHeal(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numAr
 RValue& onKill(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[0];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	return ReturnValue;
 }
@@ -897,8 +911,7 @@ RValue& onKill(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numAr
 RValue& onTakeDamage(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[3];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[0];
 	return ReturnValue;
@@ -907,8 +920,7 @@ RValue& onTakeDamage(CInstance* Self, CInstance* Other, RValue& ReturnValue, int
 RValue& onDodge(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = *Args[3];
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[0];
 	return ReturnValue;
@@ -946,10 +958,9 @@ int curSkillLevel = 0;
 RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numArgs, RValue** Args)
 {
 	RValue playerCharacter = getInstanceVariable(Self, GML_playerCharacter);
-	RValue playerCharName = getInstanceVariable(Self, GML_charName);
 	RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
 	RValue buffsMap = getInstanceVariable(attackController, GML_Buffs);
-	auto& charData = charDataMap[std::string(playerCharName.ToString())];
+	auto& charData = charDataMap[playingCharName];
 	auto& curSkillLevelData = charData.skillDataList[curSkillIndex].skillLevelDataList[curSkillLevel];
 	if (curSkillLevelData.attackIncrement.isDefined)
 	{
@@ -1165,77 +1176,96 @@ void PlayerManagerOther22After(std::tuple<CInstance*, CInstance*, CCode*, int, R
 
 void activateAction(const characterData& charData, CInstance* parentInstance, const std::string& actionName)
 {
-	// TODO: replace the linear action name search with a hashmap
 	RValue playerManager = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerManagerIndex, 0 });
 	RValue playerCharacter = getInstanceVariable(playerManager, GML_playerCharacter);
 	RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
 	CInstance* attackControllerInstance = attackController.ToInstance();
-	for (auto& actionData : charData.actionDataList)
-	{
-		if (actionData.actionName.compare(actionName) == 0)
-		{
-			std::random_device rd;
-			std::default_random_engine generator(rd());
-			std::uniform_real_distribution<double> distribution(0, 100);
-			double randNum = distribution(generator);
-			if (randNum >= actionData.probability)
-			{
-				continue;
-			}
-			if (actionData.actionType == actionType_SpawnProjectile)
-			{
-				auto& actionProjectileData = actionData.actionProjectileData;
-				RValue overrideConfig;
-				g_RunnerInterface.StructCreate(&overrideConfig);
-				if (actionProjectileData.isAbsoluteSpawnDir)
-				{
-					g_RunnerInterface.StructAddDouble(&overrideConfig, "direction", actionProjectileData.spawnDir.value);
-				}
-				else
-				{
-					RValue direction = getInstanceVariable(parentInstance, GML_direction);
-					g_RunnerInterface.StructAddDouble(&overrideConfig, "direction", actionProjectileData.spawnDir.value + direction.ToDouble());
-				}
-				RValue xPos = getInstanceVariable(parentInstance, GML_x);
-				RValue yPos = getInstanceVariable(parentInstance, GML_y);
-				g_RunnerInterface.StructAddDouble(&overrideConfig, "x", xPos.ToDouble() + actionProjectileData.relativeSpawnPosX.value);
-				g_RunnerInterface.StructAddDouble(&overrideConfig, "y", yPos.ToDouble() + actionProjectileData.relativeSpawnPosY.value);
 
-				RValue** args = new RValue*[3];
-				args[0] = new RValue(actionProjectileData.projectileDataName.c_str());
-				args[1] = new RValue(playerCharacter);
-				args[2] = new RValue(overrideConfig);
-				RValue result;
-				origExecuteAttackScript(attackControllerInstance, attackControllerInstance, result, 3, args);
-			}
-			else if (actionData.actionType == actionType_ApplyBuff)
+	auto& curActionDataList = actionDataListMap[actionName];
+	for (auto& actionData : curActionDataList)
+	{
+		std::random_device rd;
+		std::default_random_engine generator(rd());
+		std::uniform_real_distribution<double> distribution(0, 100);
+		double randNum = distribution(generator);
+		if (randNum >= actionData.probability)
+		{
+			continue;
+		}
+		if (actionData.actionType == actionType_SpawnProjectile)
+		{
+			auto& actionProjectileData = actionData.actionProjectileData;
+			RValue overrideConfig;
+			g_RunnerInterface.StructCreate(&overrideConfig);
+			if (actionProjectileData.isAbsoluteSpawnDir)
 			{
-				auto& actionBuffData = actionData.actionBuffData;
-				
-				RValue buffsMap = getInstanceVariable(attackController, GML_Buffs);
-				RValue buffsMapData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, actionBuffData.buffName.c_str() });
-				for (auto& buffData : charData.buffDataList)
-				{
-					if (buffData.buffName.compare(actionBuffData.buffName) != 0)
-					{
-						continue;
-					}
-					RValue buffConfig;
-					g_RunnerInterface.StructCreate(&buffConfig);
-					setInstanceVariable(buffConfig, GML_reapply, true);
-					setInstanceVariable(buffConfig, GML_stacks, 1.0);
-					setInstanceVariable(buffConfig, GML_maxStacks, buffData.levels[0].maxStacks.value);
-					setInstanceVariable(buffConfig, GML_buffName, buffData.buffName.c_str());
-					setInstanceVariable(buffConfig, GML_buffIcon, getInstanceVariable(buffsMapData, GML_buffIcon));
-					// TODO: Should probably replace this with something more efficient
-					RValue ApplyBuffMethod = getInstanceVariable(attackController, GML_ApplyBuff);
-					RValue ApplyBuffArr = g_ModuleInterface->CallBuiltin("array_create", { 4 });
-					ApplyBuffArr[0] = playerCharacter;
-					ApplyBuffArr[1] = buffData.buffName.c_str();
-					ApplyBuffArr[2] = buffsMapData;
-					ApplyBuffArr[3] = buffConfig;
-					g_ModuleInterface->CallBuiltin("method_call", { ApplyBuffMethod, ApplyBuffArr });
-				}
+				g_RunnerInterface.StructAddDouble(&overrideConfig, "direction", actionProjectileData.spawnDir.value);
+			}
+			else
+			{
+				RValue direction = getInstanceVariable(parentInstance, GML_direction);
+				g_RunnerInterface.StructAddDouble(&overrideConfig, "direction", actionProjectileData.spawnDir.value + direction.ToDouble());
+			}
+			RValue xPos = getInstanceVariable(parentInstance, GML_x);
+			RValue yPos = getInstanceVariable(parentInstance, GML_y);
+			g_RunnerInterface.StructAddDouble(&overrideConfig, "x", xPos.ToDouble() + actionProjectileData.relativeSpawnPosX.value);
+			g_RunnerInterface.StructAddDouble(&overrideConfig, "y", yPos.ToDouble() + actionProjectileData.relativeSpawnPosY.value);
+
+			RValue** args = new RValue*[3];
+			args[0] = new RValue(actionProjectileData.projectileDataName.c_str());
+			args[1] = new RValue(playerCharacter);
+			args[2] = new RValue(overrideConfig);
+			RValue result;
+			origExecuteAttackScript(attackControllerInstance, attackControllerInstance, result, 3, args);
+		}
+		else if (actionData.actionType == actionType_ApplyBuff)
+		{
+			auto& actionBuffData = actionData.actionBuffData;
+
+			RValue buffsMap = getInstanceVariable(attackController, GML_Buffs);
+			RValue buffsMapData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, actionBuffData.buffName.c_str() });
+			auto& curBuffDataList = buffDataListMap[actionBuffData.buffName];
+			for (auto& buffData : curBuffDataList)
+			{
+				RValue buffConfig;
+				g_RunnerInterface.StructCreate(&buffConfig);
+				setInstanceVariable(buffConfig, GML_reapply, true);
+				setInstanceVariable(buffConfig, GML_stacks, 1.0);
+				setInstanceVariable(buffConfig, GML_maxStacks, buffData.levels[0].maxStacks.value);
+				setInstanceVariable(buffConfig, GML_buffName, buffData.buffName.c_str());
+				setInstanceVariable(buffConfig, GML_buffIcon, getInstanceVariable(buffsMapData, GML_buffIcon));
+				// TODO: Should probably replace this with something more efficient
+				RValue ApplyBuffMethod = getInstanceVariable(attackController, GML_ApplyBuff);
+				RValue ApplyBuffArr = g_ModuleInterface->CallBuiltin("array_create", { 4 });
+				ApplyBuffArr[0] = playerCharacter;
+				ApplyBuffArr[1] = buffData.buffName.c_str();
+				ApplyBuffArr[2] = buffsMapData;
+				ApplyBuffArr[3] = buffConfig;
+				g_ModuleInterface->CallBuiltin("method_call", { ApplyBuffMethod, ApplyBuffArr });
+			}
+		}
+		else if (actionData.actionType == actionType_SetProjectileStats)
+		{
+			auto& actionSetProjectileStatsData = actionData.actionSetProjectileStatsData;
+			RValue xPos = getInstanceVariable(parentInstance, GML_x);
+			RValue yPos = getInstanceVariable(parentInstance, GML_y);
+			setInstanceVariable(parentInstance, GML_x, xPos.ToDouble() + actionSetProjectileStatsData.relativePosX.value);
+			setInstanceVariable(parentInstance, GML_y, yPos.ToDouble() + actionSetProjectileStatsData.relativePosY.value);
+			if (actionSetProjectileStatsData.speed.isDefined)
+			{
+				setInstanceVariable(parentInstance, GML_speed, actionSetProjectileStatsData.speed.value);
+			}
+		}
+
+		for (auto& nextActionData : actionData.nextActionList)
+		{
+			if (nextActionData.actionFrameDelay <= 0)
+			{
+				activateAction(charData, parentInstance, nextActionData.triggeredActionName);
+			}
+			else
+			{
+				actionQueue.push(std::make_pair<int, actionQueueData>(curFrameNum + nextActionData.actionFrameDelay, actionQueueData(parentInstance, nextActionData.triggeredActionName)));
 			}
 		}
 	}
@@ -1260,8 +1290,7 @@ void checkOnTrigger(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Ar
 
 	RValue playerManager = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerManagerIndex, 0 });
 	RValue playerCharacter = getInstanceVariable(playerManager, GML_playerCharacter);
-	RValue playerCharName = getInstanceVariable(playerCharacter, GML_charName);
-	auto& charData = charDataMap[playerCharName.ToString()];
+	auto& charData = charDataMap[playingCharName];
 	const char* strAttackID = attackID.ToCString();
 
 	// TODO: Probably want to avoid string comparison for the attack name
@@ -1280,13 +1309,10 @@ void checkOnTrigger(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Ar
 		checkProjectileActionList(charData, parentInstance, charData.specialProjectileActionList, onTriggerType);
 	}
 
-	for (auto& projectileData : charData.projectileDataList)
+	auto& curProjectileDataList = projectileDataListMap[strAttackID];
+	for (auto& projectileData : curProjectileDataList)
 	{
-		if (projectileData.projectileName.compare(strAttackID) == 0)
-		{
-			checkProjectileActionList(charData, parentInstance, projectileData.projectileActionList, onTriggerType);
-			break;
-		}
+		checkProjectileActionList(charData, parentInstance, projectileData.projectileActionList, onTriggerType);
 	}
 }
 
@@ -1300,6 +1326,22 @@ void AttackDestroyBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*
 {
 	CInstance* Self = std::get<0>(Args);
 	checkOnTrigger(Args, Self, projectileActionTriggerType_OnDestroy);
+}
+
+void PlayerStepBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
+{
+	curFrameNum++;
+	auto& charData = charDataMap[playingCharName];
+	while (!actionQueue.empty() && curFrameNum >= actionQueue.top().first)
+	{
+		auto& curActionQueueData = actionQueue.top().second;
+		actionQueue.pop();
+		// TODO: Maybe should cache the instance exist function
+		if (g_ModuleInterface->CallBuiltin("instance_exists", { curActionQueueData.parentInstance }).ToBoolean())
+		{
+			activateAction(charData, curActionQueueData.parentInstance, curActionQueueData.triggeredActionName);
+		}
+	}
 }
 
 // Helper functions

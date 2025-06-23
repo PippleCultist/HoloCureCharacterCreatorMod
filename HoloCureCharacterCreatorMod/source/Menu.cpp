@@ -622,6 +622,45 @@ void handleSkillOnTrigger(std::vector<skillTriggerData>& skillTriggerList)
 	}
 }
 
+void handleNextActionList(std::vector<nextActionData>& nextActionList)
+{
+	if (ImGui::Button("Add Next Action"))
+	{
+		nextActionData curNextActionData;
+		curNextActionData.nextActionDataName = "newAction";
+		nextActionList.push_back(curNextActionData);
+	}
+	for (int j = 0; j < nextActionList.size(); j++)
+	{
+		auto& curNextAction = nextActionList[j];
+		if (ImGui::TreeNode((void*)(intptr_t)j, curNextAction.nextActionDataName.c_str()))
+		{
+			ImGui::InputText("nextActionDataName", &curNextAction.nextActionDataName);
+			if (ImGui::BeginCombo("triggeredActionName", curNextAction.triggeredActionName.c_str()))
+			{
+				for (int k = 0; k < curCharData.actionDataList.size(); k++)
+				{
+					const bool is_selected = (curNextAction.triggeredActionName.compare(curCharData.actionDataList[k].actionName) == 0);
+					if (ImGui::Selectable(curCharData.actionDataList[k].actionName.c_str(), is_selected))
+					{
+						curNextAction.triggeredActionName = curCharData.actionDataList[k].actionName;
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+			ImGui::InputInt("Frame delay", &curNextAction.actionFrameDelay);
+
+			if (ImGui::Button("Delete Next Action"))
+			{
+				nextActionList.erase(nextActionList.begin() + j);
+				j--;
+			}
+			ImGui::TreePop();
+		}
+	}
+}
+
 void handleWeaponLevelsWindow()
 {
 	ImGui::Begin("Weapon Levels");
@@ -630,6 +669,7 @@ void handleWeaponLevelsWindow()
 
 	if (curCharData.isUsingInGameMainWeapon)
 	{
+		// TODO: Probably want to make it so that actions can still be attached to the main weapon attack
 		if (ImGui::BeginCombo("Main Weapon Name", curCharData.inGameMainWeaponChar.c_str()))
 		{
 			for (const auto& [key, value] : characterDataMap)
@@ -816,6 +856,15 @@ void handleActionDataWindow()
 					ImGui::EndCombo();
 				}
 			}
+			else if (curCharData.actionDataList[i].actionType == actionType_SetProjectileStats)
+			{
+				auto& curActionSetProjectileStatsData = curCharData.actionDataList[i].actionSetProjectileStatsData;
+				curActionSetProjectileStatsData.relativePosX.isDefined |= ImGui::InputDouble(("relativePosX" + strAppendActionNumber).c_str(), &curActionSetProjectileStatsData.relativePosX.value);
+				curActionSetProjectileStatsData.relativePosY.isDefined |= ImGui::InputDouble(("relativePosY" + strAppendActionNumber).c_str(), &curActionSetProjectileStatsData.relativePosY.value);
+				curActionSetProjectileStatsData.speed.isDefined |= ImGui::InputDouble(("speed" + strAppendActionNumber).c_str(), &curActionSetProjectileStatsData.speed.value);
+			}
+
+			handleNextActionList(curCharData.actionDataList[i].nextActionList);
 			
 			if (ImGui::Button(("Delete action" + strAppendActionNumber).c_str()))
 			{
@@ -823,7 +872,6 @@ void handleActionDataWindow()
 				i--;
 			}
 
-			// TODO: add code to add to next action list
 			ImGui::TreePop();
 		}
 	}
@@ -833,6 +881,8 @@ void handleActionDataWindow()
 
 void handleProjectileWindow()
 {
+	// TODO: Add a way to modify the path of the projectile based on lifespan
+	// TODO: Maybe only have this modifiable through actions?
 	ImGui::Begin("Projectile Data");
 
 	if (ImGui::Button("Add projectile"))
@@ -1823,13 +1873,57 @@ void from_json(const nlohmann::json& inputJson, actionBuff& outputActionBuff)
 	}
 }
 
+void to_json(nlohmann::json& outputJson, const actionSetProjectileStats& inputActionSetProjectileStats)
+{
+	outputJson = nlohmann::json{
+		{ "relativePosX", inputActionSetProjectileStats.relativePosX },
+		{ "relativePosY", inputActionSetProjectileStats.relativePosY },
+		{ "speed", inputActionSetProjectileStats.speed },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, actionSetProjectileStats& outputActionSetProjectileStats)
+{
+	parseJSONToVar(inputJson, "relativePosX", outputActionSetProjectileStats.relativePosX);
+	parseJSONToVar(inputJson, "relativePosY", outputActionSetProjectileStats.relativePosY);
+	parseJSONToVar(inputJson, "speed", outputActionSetProjectileStats.speed);
+}
+
+void to_json(nlohmann::json& outputJson, const nextActionData& inputNextActionData)
+{
+	outputJson = nlohmann::json{
+		{ "nextActionDataName", inputNextActionData.nextActionDataName },
+		{ "actionFrameDelay", inputNextActionData.actionFrameDelay },
+		{ "triggeredActionName", inputNextActionData.triggeredActionName },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, nextActionData& outputNextActionData)
+{
+	auto& nextActionDataName = inputJson["nextActionDataName"];
+	if (nextActionDataName.is_string())
+	{
+		outputNextActionData.nextActionDataName = nextActionDataName;
+	}
+	auto& actionFrameDelay = inputJson["actionFrameDelay"];
+	if (actionFrameDelay.is_number_integer())
+	{
+		outputNextActionData.actionFrameDelay = actionFrameDelay;
+	}
+	auto& triggeredActionName = inputJson["triggeredActionName"];
+	if (triggeredActionName.is_string())
+	{
+		outputNextActionData.triggeredActionName = triggeredActionName;
+	}
+}
+
 void to_json(nlohmann::json& outputJson, const actionData& inputActionData)
 {
 	outputJson = nlohmann::json{
 		{ "actionName", inputActionData.actionName },
 		{ "actionType", actionTypeMap[inputActionData.actionType] },
 		{ "probability", inputActionData.probability },
-//		{ "nextActionList", inputActionData.nextActionList },
+		{ "nextActionList", inputActionData.nextActionList },
 	};
 	if (inputActionData.actionType == actionType_SpawnProjectile)
 	{
@@ -1843,6 +1937,12 @@ void to_json(nlohmann::json& outputJson, const actionData& inputActionData)
 		to_json(tempJson, inputActionData.actionBuffData);
 		outputJson["actionBuffData"] = tempJson;
 	}
+	else if (inputActionData.actionType == actionType_SetProjectileStats)
+	{
+		nlohmann::json tempJson;
+		to_json(tempJson, inputActionData.actionSetProjectileStatsData);
+		outputJson["actionSetProjectileStatsData"] = tempJson;
+	}
 }
 
 void from_json(const nlohmann::json& inputJson, actionData& outputActionData)
@@ -1854,7 +1954,11 @@ void from_json(const nlohmann::json& inputJson, actionData& outputActionData)
 	{
 		outputActionData.probability = probability;
 	}
-//	parseJSONToVar(inputJson, "nextActionList", outputActionData.nextActionList);
+	auto& nextActionList = inputJson["nextActionList"];
+	if (nextActionList.is_array())
+	{
+		from_json(nextActionList, outputActionData.nextActionList);
+	}
 	if (outputActionData.actionType == actionType_SpawnProjectile)
 	{
 		from_json(inputJson["actionProjectileData"], outputActionData.actionProjectileData);
@@ -1862,6 +1966,10 @@ void from_json(const nlohmann::json& inputJson, actionData& outputActionData)
 	else if (outputActionData.actionType == actionType_ApplyBuff)
 	{
 		from_json(inputJson["actionBuffData"], outputActionData.actionBuffData);
+	}
+	else if (outputActionData.actionType == actionType_SetProjectileStats)
+	{
+		from_json(inputJson["actionSetProjectileStatsData"], outputActionData.actionSetProjectileStatsData);
 	}
 }
 

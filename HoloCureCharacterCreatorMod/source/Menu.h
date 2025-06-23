@@ -21,6 +21,8 @@ struct JSONDouble;
 struct JSONInt;
 struct actionProjectile;
 struct actionBuff;
+struct actionSetProjectileStats;
+struct nextActionData;
 struct actionData;
 struct projectileActionData;
 struct projectileData;
@@ -49,6 +51,10 @@ void to_json(nlohmann::json& outputJson, const actionProjectile& inputActionProj
 void from_json(const nlohmann::json& inputJson, actionProjectile& outputActionProjectile);
 void to_json(nlohmann::json& outputJson, const actionBuff& inputActionBuff);
 void from_json(const nlohmann::json& inputJson, actionBuff& outputActionBuff);
+void to_json(nlohmann::json& outputJson, const actionSetProjectileStats& inputActionSetProjectileStats);
+void from_json(const nlohmann::json& inputJson, actionSetProjectileStats& outputActionSetProjectileStats);
+void to_json(nlohmann::json& outputJson, const nextActionData& inputNextActionData);
+void from_json(const nlohmann::json& inputJson, nextActionData& outputNextActionData);
 void to_json(nlohmann::json& outputJson, const actionData& inputActionData);
 void from_json(const nlohmann::json& inputJson, actionData& outputActionData);
 void to_json(nlohmann::json& outputJson, const projectileActionData& inputProjectileActionData);
@@ -232,11 +238,24 @@ struct actionBuff
 	std::string buffName;
 };
 
+struct actionSetProjectileStats
+{
+	JSONDouble relativePosX;
+	JSONDouble relativePosY;
+	JSONDouble speed;
+	// TODO: Add dir
+};
+
+// TODO: Add modifying speed as an action
+// TODO: Add modifying position as an action
+// Maybe the above two can just be combined together to just modifying the projectile stats?
+// TODO: Probably want variables to be used in the action?
 enum actionTypeEnum
 {
 	actionType_NONE,
 	actionType_SpawnProjectile,
 	actionType_ApplyBuff,
+	actionType_SetProjectileStats,
 };
 
 static std::unordered_map<actionTypeEnum, std::string> actionTypeMap
@@ -244,16 +263,29 @@ static std::unordered_map<actionTypeEnum, std::string> actionTypeMap
 	{ actionType_NONE, "NONE" },
 	{ actionType_SpawnProjectile, "SpawnProjectile" },
 	{ actionType_ApplyBuff, "ApplyBuff" },
+//	{ actionType_SetProjectileStats, "SetProjectileStats" },
+};
+
+struct nextActionData
+{
+	std::string nextActionDataName;
+	int actionFrameDelay;
+	std::string triggeredActionName;
+
+	nextActionData() : actionFrameDelay(0)
+	{
+	}
 };
 
 struct actionData
 {
 	std::string actionName;
 	actionTypeEnum actionType;
-//	std::vector<std::string> nextActionList;
+	std::vector<nextActionData> nextActionList;
 	int probability;
 	actionProjectile actionProjectileData;
 	actionBuff actionBuffData;
+	actionSetProjectileStats actionSetProjectileStatsData;
 
 	actionData() : actionType(actionType_NONE), probability(100)
 	{
@@ -273,6 +305,8 @@ struct projectileData
 	JSONDouble projectileSpeed;
 	std::vector<projectileActionData> projectileActionList;
 	// TODO: Should add a isMain flag
+	// TODO: Should add projectile weapon type
+	// TODO: Should add isSkill flag
 
 	std::string curSelectedProjectileAction;
 	TextureData projectileAnimationTextureData;

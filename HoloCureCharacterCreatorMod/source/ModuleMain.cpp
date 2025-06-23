@@ -192,6 +192,11 @@ EXPORTED AurieStatus ModuleInitialize(
 		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_Attack_Destroy_0");
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
+	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterCodeEventCallback(MODNAME, "gml_Object_obj_Player_Step_0", PlayerStepBefore, nullptr)))
+	{
+		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Object_obj_Player_Step_0");
+		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
+	}
 
 	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterScriptFunctionCallback(MODNAME, "gml_Script_CanSubmitScore@gml_Object_obj_PlayerManager_Create_0", CanSubmitScoreFuncBefore, nullptr, &origCanSubmitScoreScript)))
 	{
@@ -201,6 +206,11 @@ EXPORTED AurieStatus ModuleInitialize(
 	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterScriptFunctionCallback(MODNAME, "gml_Script_ExecuteAttack@gml_Object_obj_AttackController_Create_0", nullptr, nullptr, &origExecuteAttackScript)))
 	{
 		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Script_ExecuteAttack@gml_Object_obj_AttackController_Create_0");
+		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
+	}
+	if (!AurieSuccess(callbackManagerInterfacePtr->RegisterScriptFunctionCallback(MODNAME, "gml_Script_InitializeCharacter@gml_Object_obj_PlayerManager_Create_0", nullptr, InitializeCharacterAfter, nullptr)))
+	{
+		g_ModuleInterface->Print(CM_RED, "Failed to register callback for %s", "gml_Script_InitializeCharacter@gml_Object_obj_PlayerManager_Create_0");
 		return AURIE_MODULE_DEPENDENCY_NOT_RESOLVED;
 	}
 

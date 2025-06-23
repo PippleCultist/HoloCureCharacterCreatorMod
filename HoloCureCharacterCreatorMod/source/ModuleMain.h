@@ -102,6 +102,7 @@
 	DO(pickupRange) \
 	DO(CritMod) \
 	DO(bonusProjectiles) \
+	DO(charData) \
 
 #define MAKE_ENUM(VAR) GML_ ## VAR,
 enum VariableNames
