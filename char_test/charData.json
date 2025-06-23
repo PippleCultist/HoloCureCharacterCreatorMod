@@ -14,6 +14,7 @@
                 "spawnDir": 0.0
             },
             "actionType": "SpawnProjectile",
+            "nextActionList": [],
             "probability": 100
         },
         {
@@ -26,6 +27,7 @@
                 "spawnDir": null
             },
             "actionType": "SpawnProjectile",
+            "nextActionList": [],
             "probability": 100
         },
         {
@@ -38,6 +40,7 @@
                 "spawnDir": 90.0
             },
             "actionType": "SpawnProjectile",
+            "nextActionList": [],
             "probability": 100
         },
         {
@@ -50,6 +53,7 @@
                 "spawnDir": 180.0
             },
             "actionType": "SpawnProjectile",
+            "nextActionList": [],
             "probability": 100
         },
         {
@@ -62,6 +66,7 @@
                 "spawnDir": 270.0
             },
             "actionType": "SpawnProjectile",
+            "nextActionList": [],
             "probability": 100
         },
         {
@@ -70,6 +75,7 @@
             },
             "actionName": "newAction",
             "actionType": "ApplyBuff",
+            "nextActionList": [],
             "probability": 100
         },
         {
@@ -78,6 +84,7 @@
             },
             "actionName": "critBuff1",
             "actionType": "ApplyBuff",
+            "nextActionList": [],
             "probability": 10
         },
         {
@@ -86,6 +93,7 @@
             },
             "actionName": "critBuff2",
             "actionType": "ApplyBuff",
+            "nextActionList": [],
             "probability": 20
         },
         {
@@ -94,7 +102,35 @@
             },
             "actionName": "critBuff3",
             "actionType": "ApplyBuff",
+            "nextActionList": [],
             "probability": 50
+        },
+        {
+            "actionName": "burstAction",
+            "actionType": "NONE",
+            "nextActionList": [
+                {
+                    "actionFrameDelay": 10,
+                    "nextActionDataName": "newAction",
+                    "triggeredActionName": "spawnProj0"
+                },
+                {
+                    "actionFrameDelay": 20,
+                    "nextActionDataName": "newAction",
+                    "triggeredActionName": "spawnProj1"
+                },
+                {
+                    "actionFrameDelay": 30,
+                    "nextActionDataName": "newAction",
+                    "triggeredActionName": "spawnProj2"
+                },
+                {
+                    "actionFrameDelay": 40,
+                    "nextActionDataName": "newAction",
+                    "triggeredActionName": "spawnProj3"
+                }
+            ],
+            "probability": 100
         }
     ],
     "attackAnimationFPS": 25,
@@ -466,8 +502,14 @@
                     "hasteIncrement": null,
                     "healMultiplier": null,
                     "pickupRange": null,
-                    "skillDescription": "Increases food drop",
-                    "skillTriggerList": [],
+                    "skillDescription": "Increases food drop and creates attacks when hit",
+                    "skillTriggerList": [
+                        {
+                            "skillTriggerName": "newOnTrigger",
+                            "skillTriggerType": "onTakeDamage",
+                            "triggeredActionName": "burstAction"
+                        }
+                    ],
                     "speedIncrement": null,
                     "weaponSize": null
                 },
