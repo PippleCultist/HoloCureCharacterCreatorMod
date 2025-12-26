@@ -70,6 +70,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);include/imgui</IncludePath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
@@ -111,7 +114,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -129,9 +132,10 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -149,8 +153,13 @@
     <ClCompile Include="include\imgui\imgui_stdlib.cpp" />
     <ClCompile Include="include\imgui\imgui_tables.cpp" />
     <ClCompile Include="include\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="include\imgui_node_editor\crude_json.cpp" />
+    <ClCompile Include="include\imgui_node_editor\imgui_canvas.cpp" />
+    <ClCompile Include="include\imgui_node_editor\imgui_node_editor.cpp" />
+    <ClCompile Include="include\imgui_node_editor\imgui_node_editor_api.cpp" />
     <ClCompile Include="include\YYToolkit\YYTK_Shared_Types.cpp" />
     <ClCompile Include="source\BuiltinFunctions.cpp" />
+    <ClCompile Include="source\CommonFunctions.cpp" />
     <ClCompile Include="source\Menu.cpp" />
     <ClCompile Include="source\CodeEvents.cpp" />
     <ClCompile Include="source\ModuleMain.cpp" />
@@ -170,6 +179,12 @@
     <ClInclude Include="include\imgui\imstb_rectpack.h" />
     <ClInclude Include="include\imgui\imstb_textedit.h" />
     <ClInclude Include="include\imgui\imstb_truetype.h" />
+    <ClInclude Include="include\imgui_node_editor\crude_json.h" />
+    <ClInclude Include="include\imgui_node_editor\imgui_bezier_math.h" />
+    <ClInclude Include="include\imgui_node_editor\imgui_canvas.h" />
+    <ClInclude Include="include\imgui_node_editor\imgui_extra_math.h" />
+    <ClInclude Include="include\imgui_node_editor\imgui_node_editor.h" />
+    <ClInclude Include="include\imgui_node_editor\imgui_node_editor_internal.h" />
     <ClInclude Include="include\nlohmann\json.hpp" />
     <ClInclude Include="include\stb_image\stb_image.h" />
     <ClInclude Include="include\YYToolkit\YYTK_Shared.hpp" />
@@ -182,6 +197,11 @@
     <ClInclude Include="source\CommonFunctions.h" />
     <ClInclude Include="source\ModuleMain.h" />
     <ClInclude Include="source\ScriptFunctions.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="include\imgui_node_editor\imgui_bezier_math.inl" />
+    <None Include="include\imgui_node_editor\imgui_extra_math.inl" />
+    <None Include="include\imgui_node_editor\imgui_node_editor_internal.inl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

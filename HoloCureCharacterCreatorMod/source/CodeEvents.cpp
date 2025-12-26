@@ -11,16 +11,17 @@
 #include "stb_image/stb_image.h"
 #include <random>
 #include <queue>
+#include <numbers>
 
 extern CallbackManagerInterface* callbackManagerInterfacePtr;
 extern YYGML_PushContextStack yyGMLPushContextStack;
 extern YYGML_YYSetScriptRef yyGMLYYSetScriptRef;
 extern YYGML_PopContextStack yyGMLPopContextStack;
-extern RValue lastStructVarGetName;
+//extern RValue lastStructVarGetName;
 extern std::string playingCharName;
 extern std::unordered_map<std::string, std::vector<buffData>> buffDataListMap;
-extern std::unordered_map<std::string, std::vector<actionData>> actionDataListMap;
-extern std::unordered_map<std::string, std::vector<projectileData>> projectileDataListMap;
+//extern std::unordered_map<std::string, std::vector<actionData>> actionDataListMap;
+extern std::unordered_map<std::string, std::vector<projectileDataWrapper>> projectileDataListMap;
 extern int curFrameNum;
 
 extern HWND gameWindow;
@@ -60,10 +61,11 @@ struct charSpriteData
 
 struct actionQueueData
 {
-	CInstance* parentInstance;
-	std::string triggeredActionName;
+	CInstance* parentInstancePtr;
+	nodeEditorNode* curNodePtr;
+	std::vector<nodeEditorNode*> loopBlockStack;
 
-	actionQueueData(CInstance* parentInstance, std::string triggeredActionName) : parentInstance(parentInstance), triggeredActionName(triggeredActionName)
+	actionQueueData(CInstance* parentInstancePtr, nodeEditorNode* curNodePtr, std::vector<nodeEditorNode*> loopBlockStack) : parentInstancePtr(parentInstancePtr), curNodePtr(curNodePtr), loopBlockStack(loopBlockStack)
 	{
 	}
 };
@@ -84,14 +86,22 @@ std::unordered_map<std::string, characterData> charDataMap;
 std::vector<std::string> charNameList;
 std::unordered_map<std::string, characterDataStruct> characterDataMap;
 std::priority_queue<std::pair<int, actionQueueData>, std::vector<std::pair<int, actionQueueData>>, actionQueueDataComp> actionQueue;
+std::random_device rd;
+std::default_random_engine randomGenerator(rd());
+
+RValue tempResult;
+RValue RValueInputArgs[3];
 
 bool hasBackedUpCharacterList = false;
 bool isInCharSelectDraw = false;
 
 int rhythmLeftButtonIndex = 100000;
 int rhythmRightButtonIndex = 100001;
+int curLogLevel = 0;
 
 int charSelectPage = 0;
+
+void checkOnTrigger(CInstance* parentInstance, nodeEditorNodeTypeEnum triggerType);
 
 // Simple helper function to load an image into a DX11 texture with common settings
 bool LoadTextureFromMemory(const void* data, size_t data_size, ID3D11ShaderResourceView** out_srv, int* out_width, int* out_height)
@@ -218,7 +228,7 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 	if (!std::filesystem::exists("CharacterCreatorMod"))
 	{
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find the CharacterCreatorMod directory");
-		g_ModuleInterface->Print(CM_RED, "Couldn't find the CharacterCreatorMod directory");
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Couldn't find the CharacterCreatorMod directory");
 		return;
 	}
 
@@ -226,6 +236,7 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 	charSpriteMap.clear();
 	charDataMap.clear();
 	charNameList.clear();
+	curLogLevel = 0;
 
 	for (const auto& dir : std::filesystem::directory_iterator("CharacterCreatorMod"))
 	{
@@ -247,7 +258,7 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 				curCharSpriteData.specialAnimationPtr = std::shared_ptr<spriteData>(new spriteData(dirStr + charData.specialAnimationFileName, charData.specialAnimationFileName, getSpriteNumFrames(charData.specialAnimationFileName)));;
 				for (int i = 0; i < charData.skillDataList.size(); i++)
 				{
-					curCharSpriteData.skillIconPtrList.push_back(std::shared_ptr<spriteData>(new spriteData(dirStr + charData.skillDataList[i].skillIconFileName, charData.skillDataList[i].skillIconFileName, 1)));
+					curCharSpriteData.skillIconPtrList.push_back(std::shared_ptr<spriteData>(new spriteData(dirStr + charData.skillDataList[i].data.skillIconFileName, charData.skillDataList[i].data.skillIconFileName, 1)));
 					double skillIconWidth = g_ModuleInterface->CallBuiltin("sprite_get_width", { curCharSpriteData.skillIconPtrList[i]->spriteRValue}).m_Real;
 					double skillIconHeight = g_ModuleInterface->CallBuiltin("sprite_get_height", { curCharSpriteData.skillIconPtrList[i]->spriteRValue }).m_Real;
 					g_ModuleInterface->CallBuiltin("sprite_set_offset", { curCharSpriteData.skillIconPtrList[i]->spriteRValue, skillIconWidth / 2, skillIconHeight / 2 });
@@ -263,11 +274,10 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 
 				for (auto& projectileData : charData.projectileDataList)
 				{
-					curCharSpriteData.projectileAnimationPtrMap[projectileData.projectileName] = std::shared_ptr<spriteData>(new spriteData(dirStr + projectileData.projectileAnimationFileName, projectileData.projectileAnimationFileName, getSpriteNumFrames(projectileData.projectileAnimationFileName)));
-					double projectileAnimationWidth = g_ModuleInterface->CallBuiltin("sprite_get_width", { curCharSpriteData.projectileAnimationPtrMap[projectileData.projectileName]->spriteRValue }).m_Real;
-					double projectileAnimationHeight = g_ModuleInterface->CallBuiltin("sprite_get_height", { curCharSpriteData.projectileAnimationPtrMap[projectileData.projectileName]->spriteRValue }).m_Real;
-					g_ModuleInterface->CallBuiltin("sprite_set_offset", { curCharSpriteData.projectileAnimationPtrMap[projectileData.projectileName]->spriteRValue, projectileAnimationWidth / 2, projectileAnimationHeight / 2 });
-
+					curCharSpriteData.projectileAnimationPtrMap[projectileData.data.projectileName] = std::shared_ptr<spriteData>(new spriteData(dirStr + projectileData.data.projectileAnimationFileName, projectileData.data.projectileAnimationFileName, getSpriteNumFrames(projectileData.data.projectileAnimationFileName)));
+					double projectileAnimationWidth = g_ModuleInterface->CallBuiltin("sprite_get_width", { curCharSpriteData.projectileAnimationPtrMap[projectileData.data.projectileName]->spriteRValue }).m_Real;
+					double projectileAnimationHeight = g_ModuleInterface->CallBuiltin("sprite_get_height", { curCharSpriteData.projectileAnimationPtrMap[projectileData.data.projectileName]->spriteRValue }).m_Real;
+					g_ModuleInterface->CallBuiltin("sprite_set_offset", { curCharSpriteData.projectileAnimationPtrMap[projectileData.data.projectileName]->spriteRValue, projectileAnimationWidth / 2, projectileAnimationHeight / 2 });
 				}
 
 				double attackIconWidth = g_ModuleInterface->CallBuiltin("sprite_get_width", { curCharSpriteData.attackIconPtr->spriteRValue }).m_Real;
@@ -392,13 +402,13 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 				{
 					for (int i = 0; i < charData.skillDataList.size(); i++)
 					{
-						if (charData.skillDataList[i].isUsingInGameSkill)
+						if (charData.skillDataList[i].data.isUsingInGameSkill)
 						{
-							g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[i].inGameSkillName.c_str(), 0);
+							g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[i].data.inGameSkillName.c_str(), 0);
 						}
 						else
 						{
-							g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[i].skillName.c_str(), 0);
+							g_RunnerInterface.StructAddDouble(&perksStruct, charData.skillDataList[i].data.skillName.c_str(), 0);
 						}
 					}
 				}
@@ -410,6 +420,11 @@ void CharSelectCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValu
 				charNameList.push_back(charData.charName);
 				charSpriteMap[charData.charName] = curCharSpriteData;
 				charDataMap[charData.charName] = charData;
+				// Seems like this needs to be after it's set in the map in order to avoid the audio being destroyed
+				for (auto& soundData : charDataMap[charData.charName].soundDataList)
+				{
+					soundData.soundRValue.soundIndex = g_ModuleInterface->CallBuiltin("audio_create_stream", { (dirStr + soundData.soundRValue.soundFile).c_str() });
+				}
 			}
 		}
 	}
@@ -655,10 +670,12 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 			setInstanceVariable(config, GML_optionID, charData.attackName.c_str());
 			setInstanceVariable(config, GML_onCreate, RValue());
 			setInstanceVariable(config, GML_customDrawScriptBelow, RValue());
-			setInstanceVariable(config, GML_collides, true);
+			setInstanceVariable(config, GML_collides, charData.attackCollides);
 			setInstanceVariable(config, GML_isMain, true);
+			setInstanceVariable(config, GML_applyWeaponSize, true);
 			setInstanceVariable(config, GML_maxLevel, 7);
 			setInstanceVariable(config, GML_weaponType, charData.mainWeaponWeaponType.c_str());
+			setInstanceVariable(config, GML_optionType, "Weapon");
 			setInstanceVariable(config, GML_optionIcon, curCharSprite.attackIconPtr->spriteRValue);
 			if (charData.mainWeaponWeaponType.compare("Melee") == 0)
 			{
@@ -726,15 +743,15 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 		{
 			RValue newAttack = g_ModuleInterface->CallBuiltin("variable_clone", { attack });
 			RValue config = getInstanceVariable(newAttack, GML_config);
-			setInstanceVariable(config, GML_sprite_index, curCharSprite.projectileAnimationPtrMap[projectileData.projectileName]->spriteRValue);
-			setJSONNumberToStruct(config, GML_duration, projectileData.projectileDuration);
-			setJSONNumberToStruct(config, GML_damage, projectileData.projectileDamage);
-			setJSONNumberToStruct(config, GML_hitLimit, projectileData.projectileHitLimit);
-			setJSONNumberToStruct(config, GML_speed, projectileData.projectileSpeed);
-			setJSONNumberToStruct(config, GML_hitCD, projectileData.projectileHitCD);
-			setJSONNumberToStruct(config, GML_range, projectileData.projectileHitRange);
-			setInstanceVariable(config, GML_attackID, projectileData.projectileName.c_str());
-			setInstanceVariable(config, GML_optionID, projectileData.projectileName.c_str());
+			setInstanceVariable(config, GML_sprite_index, curCharSprite.projectileAnimationPtrMap[projectileData.data.projectileName]->spriteRValue);
+			setJSONNumberToStruct(config, GML_duration, projectileData.data.projectileDuration);
+			setJSONNumberToStruct(config, GML_damage, projectileData.data.projectileDamage);
+			setJSONNumberToStruct(config, GML_hitLimit, projectileData.data.projectileHitLimit);
+			setJSONNumberToStruct(config, GML_speed, projectileData.data.projectileSpeed);
+			setJSONNumberToStruct(config, GML_hitCD, projectileData.data.projectileHitCD);
+			setJSONNumberToStruct(config, GML_range, projectileData.data.projectileHitRange);
+			setInstanceVariable(config, GML_attackID, projectileData.data.projectileName.c_str());
+			setInstanceVariable(config, GML_optionID, projectileData.data.projectileName.c_str());
 			setInstanceVariable(config, GML_onCreate, RValue());
 			setInstanceVariable(config, GML_customDrawScriptBelow, RValue());
 			setInstanceVariable(config, GML_collides, true);
@@ -743,7 +760,7 @@ void AttackControllerCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int,
 			/*
 			setInstanceVariable(config, GML_weaponType, charData.mainWeaponWeaponType.c_str());
 			*/
-			g_ModuleInterface->CallBuiltin("ds_map_set", { attackIndexMap, projectileData.projectileName.c_str(), newAttack });
+			g_ModuleInterface->CallBuiltin("ds_map_set", { attackIndexMap, projectileData.data.projectileName.c_str(), newAttack });
 		}
 	}
 }
@@ -758,49 +775,49 @@ RValue& buffApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int nu
 	auto& curBuffDataList = buffDataListMap[buffName.ToString()];
 	for (auto& buffData : curBuffDataList)
 	{
-		if (buffData.levels[0].attackIncrement.isDefined)
+		if (buffData.data.attackIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real + buffData.levels[0].attackIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).ToDouble() + buffData.data.attackIncrement.value / 100.0 * stacks.ToInt32());
 		}
-		if (buffData.levels[0].critIncrement.isDefined)
+		if (buffData.data.critIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).m_Real + buffData.levels[0].critIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).ToDouble() + buffData.data.critIncrement.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].hasteIncrement.isDefined)
+		if (buffData.data.hasteIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).m_Real + buffData.levels[0].hasteIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).ToDouble() + buffData.data.hasteIncrement.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].speedIncrement.isDefined)
+		if (buffData.data.speedIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real + buffData.levels[0].speedIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).ToDouble() + buffData.data.speedIncrement.value / 100.0 * stacks.ToInt32());
 		}
-		if (buffData.levels[0].DRMultiplier.isDefined)
+		if (buffData.data.DRMultiplier.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).m_Real * buffData.levels[0].DRMultiplier.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).ToDouble() * buffData.data.DRMultiplier.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].healMultiplier.isDefined)
+		if (buffData.data.healMultiplier.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).m_Real + buffData.levels[0].healMultiplier.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).ToDouble() + buffData.data.healMultiplier.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].food.isDefined)
+		if (buffData.data.food.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).m_Real + buffData.levels[0].food.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).ToDouble() + buffData.data.food.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].weaponSize.isDefined)
+		if (buffData.data.weaponSize.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).m_Real + buffData.levels[0].weaponSize.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).ToDouble() + buffData.data.weaponSize.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].pickupRange.isDefined)
+		if (buffData.data.pickupRange.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).m_Real + buffData.levels[0].pickupRange.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).ToDouble() + buffData.data.pickupRange.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].critMod.isDefined)
+		if (buffData.data.critMod.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).m_Real + buffData.levels[0].critMod.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).ToDouble() + buffData.data.critMod.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].bonusProjectile.isDefined)
+		if (buffData.data.bonusProjectile.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).m_Real + buffData.levels[0].bonusProjectile.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).ToDouble() + buffData.data.bonusProjectile.value * stacks.ToInt32());
 		}
 	}
 
@@ -817,49 +834,49 @@ RValue& buffRemove(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 	auto& curBuffDataList = buffDataListMap[buffName.ToString()];
 	for (auto& buffData : curBuffDataList)
 	{
-		if (buffData.levels[0].attackIncrement.isDefined)
+		if (buffData.data.attackIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real - buffData.levels[0].attackIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).ToDouble() - buffData.data.attackIncrement.value / 100.0 * stacks.ToInt32());
 		}
-		if (buffData.levels[0].critIncrement.isDefined)
+		if (buffData.data.critIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).m_Real - buffData.levels[0].critIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_crit, getInstanceVariable(playerCharacter, GML_crit).ToDouble() - buffData.data.critIncrement.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].hasteIncrement.isDefined)
+		if (buffData.data.hasteIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).m_Real - buffData.levels[0].hasteIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_haste, getInstanceVariable(playerCharacter, GML_haste).ToDouble() - buffData.data.hasteIncrement.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].speedIncrement.isDefined)
+		if (buffData.data.speedIncrement.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real - buffData.levels[0].speedIncrement.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).ToDouble() - buffData.data.speedIncrement.value / 100.0 * stacks.ToInt32());
 		}
-		if (buffData.levels[0].DRMultiplier.isDefined)
+		if (buffData.data.DRMultiplier.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).m_Real / (buffData.levels[0].DRMultiplier.value * stacks.m_Real));
+			setInstanceVariable(playerCharacter, GML_DR, getInstanceVariable(playerCharacter, GML_DR).ToDouble() / (buffData.data.DRMultiplier.value * stacks.ToInt32()));
 		}
-		if (buffData.levels[0].healMultiplier.isDefined)
+		if (buffData.data.healMultiplier.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).m_Real - buffData.levels[0].healMultiplier.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_healMultiplier, getInstanceVariable(playerCharacter, GML_healMultiplier).ToDouble() - buffData.data.healMultiplier.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].food.isDefined)
+		if (buffData.data.food.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).m_Real - buffData.levels[0].food.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_food, getInstanceVariable(playerCharacter, GML_food).ToDouble() - buffData.data.food.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].weaponSize.isDefined)
+		if (buffData.data.weaponSize.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).m_Real - buffData.levels[0].weaponSize.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_weaponSize, getInstanceVariable(playerCharacter, GML_weaponSize).ToDouble() - buffData.data.weaponSize.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].pickupRange.isDefined)
+		if (buffData.data.pickupRange.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).m_Real - buffData.levels[0].pickupRange.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_pickupRange, getInstanceVariable(playerCharacter, GML_pickupRange).ToDouble() - buffData.data.pickupRange.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].critMod.isDefined)
+		if (buffData.data.critMod.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).m_Real - buffData.levels[0].critMod.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_CritMod, getInstanceVariable(playerCharacter, GML_CritMod).ToDouble() - buffData.data.critMod.value * stacks.ToInt32());
 		}
-		if (buffData.levels[0].bonusProjectile.isDefined)
+		if (buffData.data.bonusProjectile.isDefined)
 		{
-			setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).m_Real - buffData.levels[0].bonusProjectile.value * stacks.m_Real);
+			setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).ToDouble() - buffData.data.bonusProjectile.value * stacks.ToInt32());
 		}
 	}
 	return ReturnValue;
@@ -869,7 +886,7 @@ RValue& onDebuff(CInstance* Self, CInstance* Other, RValue& ReturnValue, int num
 {
 	RValue playerCharacter = *Args[0];
 	auto& charData = charDataMap[playingCharName];
-	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
+//	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	return ReturnValue;
 }
 
@@ -877,7 +894,7 @@ RValue& onAttackCreate(CInstance* Self, CInstance* Other, RValue& ReturnValue, i
 {
 	RValue playerCharacter = *Args[0];
 	auto& charData = charDataMap[playingCharName];
-	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
+//	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	return ReturnValue;
 }
 
@@ -886,7 +903,7 @@ RValue& onCriticalHit(CInstance* Self, CInstance* Other, RValue& ReturnValue, in
 	// TODO: Maybe make it so that it can target the attack instead of the player?
 	RValue playerCharacter = *Args[0];
 	auto& charData = charDataMap[playingCharName];
-	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
+//	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[3];
 	return ReturnValue;
 }
@@ -895,7 +912,7 @@ RValue& onHeal(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numAr
 {
 	RValue playerCharacter = *Args[1];
 	auto& charData = charDataMap[playingCharName];
-	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
+//	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[0];
 	return ReturnValue;
 }
@@ -904,7 +921,7 @@ RValue& onKill(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numAr
 {
 	RValue playerCharacter = *Args[0];
 	auto& charData = charDataMap[playingCharName];
-	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
+//	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	return ReturnValue;
 }
 
@@ -912,7 +929,7 @@ RValue& onTakeDamage(CInstance* Self, CInstance* Other, RValue& ReturnValue, int
 {
 	RValue playerCharacter = *Args[3];
 	auto& charData = charDataMap[playingCharName];
-	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
+//	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[0];
 	return ReturnValue;
 }
@@ -921,7 +938,7 @@ RValue& onDodge(CInstance* Self, CInstance* Other, RValue& ReturnValue, int numA
 {
 	RValue playerCharacter = *Args[3];
 	auto& charData = charDataMap[playingCharName];
-	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
+//	activateAction(charData, playerCharacter.ToInstance(), lastStructVarGetName.ToString());
 	ReturnValue = *Args[0];
 	return ReturnValue;
 }
@@ -936,7 +953,7 @@ void AttackControllerOther11After(std::tuple<CInstance*, CInstance*, CCode*, int
 		{
 			RValue buffStruct;
 			g_RunnerInterface.StructCreate(&buffStruct);
-			setInstanceVariable(buffStruct, GML_timer, buffData.levels[0].timer.value);
+			setInstanceVariable(buffStruct, GML_timer, buffData.data.timer.value);
 			RValue retVal;
 			yyGMLPushContextStack(Self);
 			yyGMLYYSetScriptRef(&retVal, buffApply, Self);
@@ -961,10 +978,10 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 	RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
 	RValue buffsMap = getInstanceVariable(attackController, GML_Buffs);
 	auto& charData = charDataMap[playingCharName];
-	auto& curSkillLevelData = charData.skillDataList[curSkillIndex].skillLevelDataList[curSkillLevel];
+	auto& curSkillLevelData = charData.skillDataList[curSkillIndex].data.skillLevelDataList[curSkillLevel];
 	if (curSkillLevelData.attackIncrement.isDefined)
 	{
-		setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real + curSkillLevelData.attackIncrement.value);
+		setInstanceVariable(playerCharacter, GML_ATK, getInstanceVariable(playerCharacter, GML_ATK).m_Real + curSkillLevelData.attackIncrement.value / 100.0);
 	}
 	if (curSkillLevelData.critIncrement.isDefined)
 	{
@@ -976,7 +993,7 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 	}
 	if (curSkillLevelData.speedIncrement.isDefined)
 	{
-		setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real + curSkillLevelData.speedIncrement.value);
+		setInstanceVariable(playerCharacter, GML_SPD, getInstanceVariable(playerCharacter, GML_SPD).m_Real + curSkillLevelData.speedIncrement.value / 100.0);
 	}
 	if (curSkillLevelData.DRMultiplier.isDefined)
 	{
@@ -1007,6 +1024,10 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 		setInstanceVariable(playerCharacter, GML_bonusProjectiles, getInstanceVariable(playerCharacter, GML_bonusProjectiles).m_Real + curSkillLevelData.bonusProjectile.value);
 	}
 
+	checkOnTrigger(Self, nodeEditorNodeType_OnSkillApply);
+
+	// TODO: Get this to trigger from the node editor instead
+	/*
 	for (auto& skillTriggerData : curSkillLevelData.skillTriggerList)
 	{
 		RValue onTriggerStruct = g_ModuleInterface->CallBuiltin("variable_instance_get", { playerCharacter, skillTriggerTypeMap[skillTriggerData.skillTriggerType].c_str() });
@@ -1061,6 +1082,7 @@ RValue& skillApply(CInstance* Self, CInstance* Other, RValue& ReturnValue, int n
 		yyGMLPopContextStack(1);
 		g_ModuleInterface->CallBuiltin("variable_instance_set", { onTriggerStruct, skillTriggerData.triggeredActionName.c_str(), retVal });
 	}
+	*/
 	return ReturnValue;
 }
 
@@ -1144,12 +1166,12 @@ void PlayerManagerOther22After(std::tuple<CInstance*, CInstance*, CCode*, int, R
 			RValue newPerk = g_ModuleInterface->CallBuiltin("variable_clone", { FPSMastery });
 			auto& skillData = charData.skillDataList[j];
 			
-			setInstanceVariable(newPerk, GML_id, skillData.skillName.c_str());
+			setInstanceVariable(newPerk, GML_id, skillData.data.skillName.c_str());
 			setInstanceVariable(newPerk, GML_optionIcon, charSpriteMap[charDataPair.first].skillIconPtrList[j]->spriteRValue);
-			setInstanceVariable(newPerk, GML_name, skillData.skillName.c_str());
-			setInstanceVariable(newPerk, GML_optionName, skillData.skillName.c_str());
-			setInstanceVariable(newPerk, GML_optionDescription, skillData.skillLevelDataList[0].skillDescription.c_str());
-			setInstanceVariable(newPerk, GML_optionID, skillData.skillName.c_str());
+			setInstanceVariable(newPerk, GML_name, skillData.data.skillName.c_str());
+			setInstanceVariable(newPerk, GML_optionName, skillData.data.skillName.c_str());
+			setInstanceVariable(newPerk, GML_optionDescription, skillData.data.skillLevelDataList[0].skillDescription.c_str());
+			setInstanceVariable(newPerk, GML_optionID, skillData.data.skillName.c_str());
 			
 			RValue descriptionArr = g_ModuleInterface->CallBuiltin("array_create", { 3 });
 			RValue skillOnApply = g_ModuleInterface->CallBuiltin("array_create", { 3 });
@@ -1160,187 +1182,1805 @@ void PlayerManagerOther22After(std::tuple<CInstance*, CInstance*, CCode*, int, R
 				yyGMLYYSetScriptRef(&retVal, onApplyList[j * 3 + level], Self);
 				yyGMLPopContextStack(1);
 				skillOnApply[level] = retVal;
-				descriptionArr[level] = skillData.skillLevelDataList[level].skillDescription.c_str();
+				descriptionArr[level] = skillData.data.skillLevelDataList[level].skillDescription.c_str();
 			}
 			setInstanceVariable(newPerk, GML_OnApply, skillOnApply);
 
 			RValue descContainer;
 			g_RunnerInterface.StructCreate(&descContainer);
 			setInstanceVariable(descContainer, GML_selectedLanguage, descriptionArr);
-			g_ModuleInterface->CallBuiltin("variable_instance_set", { textContainer, std::string_view(skillData.skillName + "Description"), descContainer });
+			g_ModuleInterface->CallBuiltin("variable_instance_set", { textContainer, std::string_view(skillData.data.skillName + "Description"), descContainer });
 
-			g_ModuleInterface->CallBuiltin("ds_map_set", { perksMap, skillData.skillName.c_str(), newPerk});
+			g_ModuleInterface->CallBuiltin("ds_map_set", { perksMap, skillData.data.skillName.c_str(), newPerk});
 		}
 	}
 }
 
-void activateAction(const characterData& charData, CInstance* parentInstance, const std::string& actionName)
+nodeEditorNodePin* getConnectedOutputPinForInputPin(nodeEditorNode& curNode, nodeEditorNodePin& inputPin)
 {
-	RValue playerManager = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerManagerIndex, 0 });
-	RValue playerCharacter = getInstanceVariable(playerManager, GML_playerCharacter);
-	RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
-	CInstance* attackControllerInstance = attackController.ToInstance();
+	auto& curLink = inputPin.nodeLinks[0];
+	auto& outputPin = (curLink.startPinID == inputPin.pinID) ? curLink.endPinPtr : curLink.startPinPtr;
+	return outputPin;
+}
 
-	auto& curActionDataList = actionDataListMap[actionName];
-	for (auto& actionData : curActionDataList)
+void copyPinValue(nodeEditorNodePin* inputPin, nodeEditorNodePin& outputPin)
+{
+	if (inputPin->pinType == nodeEditorPinType_Integer)
 	{
-		std::random_device rd;
-		std::default_random_engine generator(rd());
-		std::uniform_real_distribution<double> distribution(0, 100);
-		double randNum = distribution(generator);
-		if (randNum >= actionData.probability)
+		outputPin.data->pinIntegerResult = inputPin->data->pinIntegerResult;
+	}
+	else if (inputPin->pinType == nodeEditorPinType_Number)
+	{
+		outputPin.data->pinNumberResult = inputPin->data->pinNumberResult;
+	}
+	else if (inputPin->pinType == nodeEditorPinType_String)
+	{
+		outputPin.data->pinStringResult = inputPin->data->pinStringResult;
+	}
+	else if (inputPin->pinType == nodeEditorPinType_RValue)
+	{
+		outputPin.data->pinRValueResult = inputPin->data->pinRValueResult;
+	}
+	else if (inputPin->pinType == nodeEditorPinType_Instance)
+	{
+		outputPin.data->pinInstanceResult = inputPin->data->pinInstanceResult;
+	}
+	else if (inputPin->pinType == nodeEditorPinType_DSList)
+	{
+		outputPin.data->pinDSListResult = inputPin->data->pinDSListResult;
+	}
+	else if (inputPin->pinType == nodeEditorPinType_DSMap)
+	{
+		outputPin.data->pinDSMapResult = inputPin->data->pinDSMapResult;
+	}
+	else if (inputPin->pinType == nodeEditorPinType_Array)
+	{
+		outputPin.data->pinArrayResult = inputPin->data->pinArrayResult;
+	}
+}
+
+void processAction(nodeEditorNode& curNode, CInstance* parentInstance, bool isCodeFlow)
+{
+	// TODO: Make delay a no-op since it'll be done in processCodeActionFlow
+	switch (curNode.nodeType)
+	{
+		case nodeEditorNodeType_OnCreateProjectile:
+		case nodeEditorNodeType_OnDestroyProjectile:
+		case nodeEditorNodeType_Delay:
+		case nodeEditorNodeType_MergeCodeFlow:
+		case nodeEditorNodeType_OnFrameStep:
+		case nodeEditorNodeType_OnSkillApply:
+		case nodeEditorNodeType_MergeFlush:
 		{
-			continue;
+			// no-op
+			return;
 		}
-		if (actionData.actionType == actionType_SpawnProjectile)
+		case nodeEditorNodeType_SpawnProjectile:
 		{
-			auto& actionProjectileData = actionData.actionProjectileData;
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			RValue playerManager = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerManagerIndex, 0 });
+			RValue playerCharacter = getInstanceVariable(playerManager, GML_playerCharacter);
+			RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
+			CInstance* attackControllerInstance = attackController.ToInstance();
+
+			auto outputProjectilePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& outputProjectileNode = *outputProjectilePin->parentNodePtr;
+			processAction(outputProjectileNode, parentInstance, false);
+
+			auto outputDirectionPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+			auto& outputDirectionNode = *outputDirectionPin->parentNodePtr;
+			processAction(outputDirectionNode, parentInstance, false);
+
+			auto outputXPosPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[3]);
+			auto& outputXPosNode = *outputXPosPin->parentNodePtr;
+			processAction(outputXPosNode, parentInstance, false);
+
+			auto outputYPosPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[4]);
+			auto& outputYPosNode = *outputYPosPin->parentNodePtr;
+			processAction(outputYPosNode, parentInstance, false);
+
+			// TODO: Do more error checking later
+			
+			auto& actionProjectileData = outputProjectilePin->data->pinProjDataResult;
 			RValue overrideConfig;
 			g_RunnerInterface.StructCreate(&overrideConfig);
-			if (actionProjectileData.isAbsoluteSpawnDir)
-			{
-				g_RunnerInterface.StructAddDouble(&overrideConfig, "direction", actionProjectileData.spawnDir.value);
-			}
-			else
-			{
-				RValue direction = getInstanceVariable(parentInstance, GML_direction);
-				g_RunnerInterface.StructAddDouble(&overrideConfig, "direction", actionProjectileData.spawnDir.value + direction.ToDouble());
-			}
-			RValue xPos = getInstanceVariable(parentInstance, GML_x);
-			RValue yPos = getInstanceVariable(parentInstance, GML_y);
-			g_RunnerInterface.StructAddDouble(&overrideConfig, "x", xPos.ToDouble() + actionProjectileData.relativeSpawnPosX.value);
-			g_RunnerInterface.StructAddDouble(&overrideConfig, "y", yPos.ToDouble() + actionProjectileData.relativeSpawnPosY.value);
+			g_RunnerInterface.StructAddDouble(&overrideConfig, "direction", outputDirectionPin->data->pinNumberResult);
+			g_RunnerInterface.StructAddDouble(&overrideConfig, "x", outputXPosPin->data->pinNumberResult);
+			g_RunnerInterface.StructAddDouble(&overrideConfig, "y", outputYPosPin->data->pinNumberResult);
+			g_RunnerInterface.StructAddDouble(&overrideConfig, "damage", actionProjectileData.projectileDamage.value);
+			g_RunnerInterface.StructAddInt(&overrideConfig, "duration", actionProjectileData.projectileDuration.value);
+			g_RunnerInterface.StructAddInt(&overrideConfig, "hitCD", actionProjectileData.projectileHitCD.value);
+			g_RunnerInterface.StructAddInt(&overrideConfig, "hitLimit", actionProjectileData.projectileHitLimit.value);
+			g_RunnerInterface.StructAddInt(&overrideConfig, "range", actionProjectileData.projectileHitRange.value);
+			g_RunnerInterface.StructAddDouble(&overrideConfig, "speed", actionProjectileData.projectileSpeed.value);
+			g_RunnerInterface.StructAddBool(&overrideConfig, "collides", actionProjectileData.collides);
+			g_RunnerInterface.StructAddBool(&overrideConfig, "destroyOnHitLimit", true);
+			g_RunnerInterface.StructAddBool(&overrideConfig, "applyWeaponSize", true);
+			g_RunnerInterface.StructAddBool(&overrideConfig, "isMain", actionProjectileData.isMain);
 
+			if (actionProjectileData.isMain)
+			{
+				// TODO: Fix size stamp not working for main weapon projectiles
+				auto& charData = charDataMap[playingCharName];
+				RValue attackIndexMap = getInstanceVariable(playerCharacter, GML_attacks);
+				RValue attack = g_ModuleInterface->CallBuiltin("ds_map_find_value", { attackIndexMap, charData.attackName.c_str() });
+				RValue config = getInstanceVariable(attack, GML_config);
+				RValue enhancements = getInstanceVariable(config, GML_enhancements);
+				setInstanceVariable(overrideConfig, GML_enhancements, enhancements);
+				setInstanceVariable(overrideConfig, GML_optionType, "Weapon");
+				setInstanceVariable(overrideConfig, GML_onHitEffects, g_ModuleInterface->CallBuiltin("variable_clone", { getInstanceVariable(config, GML_onHitEffects) }));
+			}
+
+			// TODO: Check if this can use the global RValue array instead of creating a new one
 			RValue** args = new RValue*[3];
-			args[0] = new RValue(actionProjectileData.projectileDataName.c_str());
+			args[0] = new RValue(actionProjectileData.projectileName.c_str());
 			args[1] = new RValue(playerCharacter);
 			args[2] = new RValue(overrideConfig);
 			RValue result;
 			origExecuteAttackScript(attackControllerInstance, attackControllerInstance, result, 3, args);
-		}
-		else if (actionData.actionType == actionType_ApplyBuff)
-		{
-			auto& actionBuffData = actionData.actionBuffData;
 
+			auto& outputInstancePin = *curNode.outputPinPtrArr[1];
+			outputInstancePin.data->pinInstanceResult = result.ToInstance();
+			return;
+		}
+		case nodeEditorNodeType_ApplyBuff:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			RValue playerManager = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerManagerIndex, 0 });
+			RValue playerCharacter = getInstanceVariable(playerManager, GML_playerCharacter);
+			RValue attackController = g_ModuleInterface->CallBuiltin("instance_find", { objAttackControllerIndex, 0 });
+			CInstance* attackControllerInstance = attackController.ToInstance();
+
+			auto outputBuffPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& outputBuffNode = *outputBuffPin->parentNodePtr;
+			processAction(outputBuffNode, parentInstance, false);
+
+			auto outputStacksPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+			auto& outputStacksNode = *outputStacksPin->parentNodePtr;
+			processAction(outputStacksNode, parentInstance, false);
+
+			auto outputTimerPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[3]);
+			auto& outputTimerNode = *outputTimerPin->parentNodePtr;
+			processAction(outputTimerNode, parentInstance, false);
+
+			// TODO: Do more error checking later
+
+			auto& buffData = outputBuffPin->data->pinBuffDataResult;
 			RValue buffsMap = getInstanceVariable(attackController, GML_Buffs);
-			RValue buffsMapData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, actionBuffData.buffName.c_str() });
-			auto& curBuffDataList = buffDataListMap[actionBuffData.buffName];
-			for (auto& buffData : curBuffDataList)
-			{
-				RValue buffConfig;
-				g_RunnerInterface.StructCreate(&buffConfig);
-				setInstanceVariable(buffConfig, GML_reapply, true);
-				setInstanceVariable(buffConfig, GML_stacks, 1.0);
-				setInstanceVariable(buffConfig, GML_maxStacks, buffData.levels[0].maxStacks.value);
-				setInstanceVariable(buffConfig, GML_buffName, buffData.buffName.c_str());
-				setInstanceVariable(buffConfig, GML_buffIcon, getInstanceVariable(buffsMapData, GML_buffIcon));
-				// TODO: Should probably replace this with something more efficient
-				RValue ApplyBuffMethod = getInstanceVariable(attackController, GML_ApplyBuff);
-				RValue ApplyBuffArr = g_ModuleInterface->CallBuiltin("array_create", { 4 });
-				ApplyBuffArr[0] = playerCharacter;
-				ApplyBuffArr[1] = buffData.buffName.c_str();
-				ApplyBuffArr[2] = buffsMapData;
-				ApplyBuffArr[3] = buffConfig;
-				g_ModuleInterface->CallBuiltin("method_call", { ApplyBuffMethod, ApplyBuffArr });
-			}
-		}
-		else if (actionData.actionType == actionType_SetProjectileStats)
-		{
-			auto& actionSetProjectileStatsData = actionData.actionSetProjectileStatsData;
-			RValue xPos = getInstanceVariable(parentInstance, GML_x);
-			RValue yPos = getInstanceVariable(parentInstance, GML_y);
-			setInstanceVariable(parentInstance, GML_x, xPos.ToDouble() + actionSetProjectileStatsData.relativePosX.value);
-			setInstanceVariable(parentInstance, GML_y, yPos.ToDouble() + actionSetProjectileStatsData.relativePosY.value);
-			if (actionSetProjectileStatsData.speed.isDefined)
-			{
-				setInstanceVariable(parentInstance, GML_speed, actionSetProjectileStatsData.speed.value);
-			}
-		}
+			RValue buffsMapData = g_ModuleInterface->CallBuiltin("ds_map_find_value", { buffsMap, buffData.buffName.c_str() });
+			RValue buffConfig;
+			g_RunnerInterface.StructCreate(&buffConfig);
+			setInstanceVariable(buffConfig, GML_reapply, true);
+			setInstanceVariable(buffConfig, GML_stacks, outputStacksPin->data->pinIntegerResult);
+			setInstanceVariable(buffConfig, GML_maxStacks, outputBuffPin->data->pinBuffDataResult.data.maxStacks.value);
+			setInstanceVariable(buffConfig, GML_buffName, outputBuffPin->data->pinBuffDataResult.buffName.c_str());
+			setInstanceVariable(buffConfig, GML_buffIcon, getInstanceVariable(buffsMapData, GML_buffIcon));
 
-		for (auto& nextActionData : actionData.nextActionList)
+			RValue ApplyBuffMethod = getInstanceVariable(attackController, GML_ApplyBuff);
+			RValue ApplyBuffArr = g_ModuleInterface->CallBuiltin("array_create", { 4 });
+			ApplyBuffArr[0] = playerCharacter;
+			ApplyBuffArr[1] = buffData.buffName.c_str();
+			ApplyBuffArr[2] = buffsMapData;
+			ApplyBuffArr[3] = buffConfig;
+			g_ModuleInterface->CallBuiltin("method_call", { ApplyBuffMethod, ApplyBuffArr });
+			return;
+		}
+		case nodeEditorNodeType_Number:
 		{
-			if (nextActionData.actionFrameDelay <= 0)
+			auto& outputNumberPin = *curNode.outputPinPtrArr[0];
+			outputNumberPin.data->pinNumberResult = outputNumberPin.pinNumberVar;
+			return;
+		}
+		case nodeEditorNodeType_ProjectileData:
+		{
+			auto& outputProjectilePin = *curNode.outputPinPtrArr[0];
+			auto& charData = charDataMap[playingCharName];
+			for (auto& projData : charData.projectileDataList)
 			{
-				activateAction(charData, parentInstance, nextActionData.triggeredActionName);
+				if (projData.data.projectileName.compare(outputProjectilePin.pinProjectileDataName) == 0)
+				{
+					outputProjectilePin.data->pinProjDataResult = projData.data;
+					break;
+				}
+			}
+
+			auto& curProjData = outputProjectilePin.data->pinProjDataResult;
+
+			if (!(*curNode.inputPinPtrArr[0]).nodeLinks.empty())
+			{
+				auto parentNodeOutputNumberPinDamageOverride = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+				auto& parentNodeOutputNumberNodeDamageOverride = *parentNodeOutputNumberPinDamageOverride->parentNodePtr;
+				processAction(parentNodeOutputNumberNodeDamageOverride, parentInstance, false);
+				curProjData.projectileDamage.value = parentNodeOutputNumberPinDamageOverride->data->pinNumberResult;
+			}
+			
+			if (!(*curNode.inputPinPtrArr[1]).nodeLinks.empty())
+			{
+				auto parentNodeOutputNumberPinDurationOverride = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+				auto& parentNodeOutputNumberNodeDurationOverride = *parentNodeOutputNumberPinDurationOverride->parentNodePtr;
+				processAction(parentNodeOutputNumberNodeDurationOverride, parentInstance, false);
+				curProjData.projectileDuration.value = parentNodeOutputNumberPinDurationOverride->data->pinIntegerResult;
+			}
+
+			if (!(*curNode.inputPinPtrArr[2]).nodeLinks.empty())
+			{
+				auto parentNodeOutputNumberPinHitCooldownOverride = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+				auto& parentNodeOutputNumberNodeHitCooldownOverride = *parentNodeOutputNumberPinHitCooldownOverride->parentNodePtr;
+				processAction(parentNodeOutputNumberNodeHitCooldownOverride, parentInstance, false);
+				curProjData.projectileHitCD.value = parentNodeOutputNumberPinHitCooldownOverride->data->pinIntegerResult;
+			}
+
+			if (!(*curNode.inputPinPtrArr[3]).nodeLinks.empty())
+			{
+				auto parentNodeOutputNumberPinHitLimitOverride = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[3]);
+				auto& parentNodeOutputNumberNodeHitLimitOverride = *parentNodeOutputNumberPinHitLimitOverride->parentNodePtr;
+				processAction(parentNodeOutputNumberNodeHitLimitOverride, parentInstance, false);
+				curProjData.projectileHitLimit.value = parentNodeOutputNumberPinHitLimitOverride->data->pinIntegerResult;
+			}
+
+			if (!(*curNode.inputPinPtrArr[4]).nodeLinks.empty())
+			{
+				auto parentNodeOutputNumberPinHitRangeOverride = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[4]);
+				auto& parentNodeOutputNumberNodeHitRangeOverride = *parentNodeOutputNumberPinHitRangeOverride->parentNodePtr;
+				processAction(parentNodeOutputNumberNodeHitRangeOverride, parentInstance, false);
+				curProjData.projectileHitRange.value = parentNodeOutputNumberPinHitRangeOverride->data->pinIntegerResult;
+			}
+
+			if (!(*curNode.inputPinPtrArr[5]).nodeLinks.empty())
+			{
+				auto parentNodeOutputNumberPinProjectileSpeedOverride = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[5]);
+				auto& parentNodeOutputNumberNodeProjectileSpeedOverride = *parentNodeOutputNumberPinProjectileSpeedOverride->parentNodePtr;
+				processAction(parentNodeOutputNumberNodeProjectileSpeedOverride, parentInstance, false);
+				curProjData.projectileSpeed.value = parentNodeOutputNumberPinProjectileSpeedOverride->data->pinNumberResult;
+			}
+			
+			return;
+		}
+		case nodeEditorNodeType_BuffData:
+		{
+			auto& outputBuffPin = *curNode.outputPinPtrArr[0];
+			auto& charData = charDataMap[playingCharName];
+			for (auto& buffData : charData.buffDataList)
+			{
+				if (buffData.buffName.compare(outputBuffPin.pinBuffDataName) == 0)
+				{
+					outputBuffPin.data->pinBuffDataResult = buffData;
+					break;
+				}
+			}
+
+			auto& curBuffData = outputBuffPin.data->pinBuffDataResult;
+
+			if (!(*curNode.inputPinPtrArr[0]).nodeLinks.empty())
+			{
+				auto parentNodeOutputIntegerPinMaxStacksOverride = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+				auto& parentNodeOutputIntegerNodeMaxStacksOverride = *parentNodeOutputIntegerPinMaxStacksOverride->parentNodePtr;
+				processAction(parentNodeOutputIntegerNodeMaxStacksOverride, parentInstance, false);
+				curBuffData.data.maxStacks.isDefined = true;
+				curBuffData.data.maxStacks.value = parentNodeOutputIntegerPinMaxStacksOverride->data->pinIntegerResult;
+			}
+
+			return;
+		}
+		case nodeEditorNodeType_SoundData:
+		{
+			auto& outputSoundPin = *curNode.outputPinPtrArr[0];
+			auto& charData = charDataMap[playingCharName];
+			for (auto& soundData : charData.soundDataList)
+			{
+				if (soundData.soundName.compare(outputSoundPin.pinSoundDataName) == 0)
+				{
+					outputSoundPin.data->pinSoundDataResult = soundData;
+					break;
+				}
+			}
+			return;
+		}
+		case nodeEditorNodeType_ThisInstance:
+		{
+			auto& outputInstancePin = *curNode.outputPinPtrArr[0];
+			outputInstancePin.data->pinInstanceResult = parentInstance;
+			return;
+		}
+		case nodeEditorNodeType_GlobalInstance:
+		{
+			auto& outputInstancePin = *curNode.outputPinPtrArr[0];
+			outputInstancePin.data->pinInstanceResult = globalInstance;
+			return;
+		}
+		case nodeEditorNodeType_PlayerManagerInstance:
+		{
+			auto& outputInstancePin = *curNode.outputPinPtrArr[0];
+			outputInstancePin.data->pinRValueResult = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerManagerIndex, 0 });
+			return;
+		}
+		case nodeEditorNodeType_PlayerInstance:
+		{
+			auto& outputInstancePin = *curNode.outputPinPtrArr[0];
+			outputInstancePin.data->pinRValueResult = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerIndex, 0 });
+			return;
+		}
+		case nodeEditorNodeType_GetVariable:
+		{
+			auto outputInstancePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& outputInstanceNode = *outputInstancePin->parentNodePtr;
+			processAction(outputInstanceNode, parentInstance, false);
+			CInstance* outputInstance = outputInstancePin->data->pinInstanceResult;
+
+			auto& inputVarNamePin = *curNode.inputPinPtrArr[1];
+			auto& outputVarPin = *curNode.outputPinPtrArr[0];
+
+			if (inputVarNamePin.variableDataType == pinVariableDataType_Direction)
+			{
+				outputVarPin.data->pinNumberResult = getInstanceVariable(outputInstance, GML_direction).ToDouble();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Creator)
+			{
+				outputVarPin.data->pinInstanceResult = getInstanceVariable(outputInstance, GML_creator).ToInstance();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_X)
+			{
+				outputVarPin.data->pinNumberResult = getInstanceVariable(outputInstance, GML_x).ToDouble();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Y)
+			{
+				outputVarPin.data->pinNumberResult = getInstanceVariable(outputInstance, GML_y).ToDouble();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_CustomRValue)
+			{
+				auto rvalueInstancePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+				auto& rvalueInstanceNode = *rvalueInstancePin->parentNodePtr;
+				processAction(rvalueInstanceNode, parentInstance, false);
+
+				if (rvalueInstancePin->data->isStringGMLHashSet)
+				{
+					RValueInputArgs[0] = outputInstance;
+					RValueInputArgs[1] = rvalueInstancePin->data->stringGMLHash;
+					origStructGetFromHashFunc(outputVarPin.data->pinRValueResult, globalInstance, nullptr, 2, RValueInputArgs);
+				}
+				else
+				{
+					outputVarPin.data->pinRValueResult = g_ModuleInterface->CallBuiltin("variable_instance_get", { outputInstance, rvalueInstancePin->pinStringVar.c_str() });
+				}
 			}
 			else
 			{
-				actionQueue.push(std::make_pair<int, actionQueueData>(curFrameNum + nextActionData.actionFrameDelay, actionQueueData(parentInstance, nextActionData.triggeredActionName)));
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown Variable data name %s", inputVarNamePin.pinVariableDataName.c_str());
+			}
+
+			return;
+		}
+		case nodeEditorNodeType_SetVariable:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+
+			auto outputInstancePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& outputInstanceNode = *outputInstancePin->parentNodePtr;
+			processAction(outputInstanceNode, parentInstance, false);
+			CInstance* outputInstance = outputInstancePin->data->pinInstanceResult;
+
+			auto& inputVarNamePin = *curNode.inputPinPtrArr[2];
+			auto& inputVarDataPin = *curNode.inputPinPtrArr[3];
+
+			auto outputVariablePin = getConnectedOutputPinForInputPin(curNode, inputVarDataPin);
+			auto& outputVariableNode = *outputVariablePin->parentNodePtr;
+			processAction(outputVariableNode, parentInstance, false);
+
+			if (inputVarNamePin.variableDataType == pinVariableDataType_Direction)
+			{
+				setInstanceVariable(outputInstance, GML_direction, outputVariablePin->data->pinNumberResult);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Creator)
+			{
+				CInstance* outputCreatorInstance = outputVariablePin->data->pinInstanceResult;
+				setInstanceVariable(outputInstance, GML_creator, outputCreatorInstance);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_X)
+			{
+				setInstanceVariable(outputInstance, GML_x, outputVariablePin->data->pinNumberResult);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Y)
+			{
+				setInstanceVariable(outputInstance, GML_y, outputVariablePin->data->pinNumberResult);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_CustomRValue)
+			{
+				auto rvalueInstancePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[4]);
+				auto& rvalueInstanceNode = *rvalueInstancePin->parentNodePtr;
+				processAction(rvalueInstanceNode, parentInstance, false);
+
+				if (rvalueInstancePin->data->isStringGMLHashSet)
+				{
+					RValueInputArgs[0] = outputInstance;
+					RValueInputArgs[1] = rvalueInstancePin->data->stringGMLHash;
+					RValueInputArgs[2] = outputVariablePin->data->pinRValueResult;
+					origStructSetFromHashFunc(tempResult, globalInstance, nullptr, 3, RValueInputArgs);
+				}
+				else
+				{
+					g_ModuleInterface->CallBuiltin("variable_instance_set", { outputInstance, rvalueInstancePin->pinStringVar.c_str(), outputVariablePin->data->pinRValueResult });
+				}
+			}
+			else
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown Variable data name %s", inputVarNamePin.pinVariableDataName.c_str());
+			}
+
+			return;
+		}
+		case nodeEditorNodeType_GetStructVariable:
+		{
+			// TODO: Figure out a way to avoid duplicating this code
+			auto outputRValuePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& outputRValueNode = *outputRValuePin->parentNodePtr;
+			processAction(outputRValueNode, parentInstance, false);
+
+			auto& inputVarNamePin = *curNode.inputPinPtrArr[1];
+			auto& outputVarPin = *curNode.outputPinPtrArr[0];
+
+			if (inputVarNamePin.variableDataType == pinVariableDataType_Direction)
+			{
+				outputVarPin.data->pinNumberResult = getInstanceVariable(outputRValuePin->data->pinRValueResult, GML_direction).ToDouble();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Creator)
+			{
+				outputVarPin.data->pinInstanceResult = getInstanceVariable(outputRValuePin->data->pinRValueResult, GML_creator).ToInstance();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_X)
+			{
+				outputVarPin.data->pinNumberResult = getInstanceVariable(outputRValuePin->data->pinRValueResult, GML_x).ToDouble();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Y)
+			{
+				outputVarPin.data->pinNumberResult = getInstanceVariable(outputRValuePin->data->pinRValueResult, GML_y).ToDouble();
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_CustomRValue)
+			{
+				auto rvalueInstancePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+				auto& rvalueInstanceNode = *rvalueInstancePin->parentNodePtr;
+				processAction(rvalueInstanceNode, parentInstance, false);
+
+				if (rvalueInstancePin->data->isStringGMLHashSet)
+				{
+					RValueInputArgs[0] = outputRValuePin->data->pinRValueResult;
+					RValueInputArgs[1] = rvalueInstancePin->data->stringGMLHash;
+					origStructGetFromHashFunc(outputVarPin.data->pinRValueResult, globalInstance, nullptr, 2, RValueInputArgs);
+				}
+				else
+				{
+					outputVarPin.data->pinRValueResult = g_ModuleInterface->CallBuiltin("variable_instance_get", { outputRValuePin->data->pinRValueResult, rvalueInstancePin->pinStringVar.c_str() });
+				}
+			}
+			else
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown Variable data name %s", inputVarNamePin.pinVariableDataName.c_str());
+			}
+
+			return;
+		}
+		case nodeEditorNodeType_SetStructVariable:
+		{
+			// TODO: Figure out a way to avoid duplicating this code
+			if (!isCodeFlow)
+			{
+				return;
+			}
+
+			auto outputRValuePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& outputRValueNode = *outputRValuePin->parentNodePtr;
+			processAction(outputRValueNode, parentInstance, false);
+
+			auto& inputVarNamePin = *curNode.inputPinPtrArr[2];
+			auto& inputVarDataPin = *curNode.inputPinPtrArr[3];
+
+			auto outputVariablePin = getConnectedOutputPinForInputPin(curNode, inputVarDataPin);
+			auto& outputVariableNode = *outputVariablePin->parentNodePtr;
+			processAction(outputVariableNode, parentInstance, false);
+
+			if (inputVarNamePin.variableDataType == pinVariableDataType_Direction)
+			{
+				setInstanceVariable(outputRValuePin->data->pinRValueResult, GML_direction, outputVariablePin->data->pinNumberResult);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Creator)
+			{
+				CInstance* outputCreatorInstance = outputVariablePin->data->pinInstanceResult;
+				setInstanceVariable(outputRValuePin->data->pinRValueResult, GML_creator, outputCreatorInstance);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_X)
+			{
+				setInstanceVariable(outputRValuePin->data->pinRValueResult, GML_x, outputVariablePin->data->pinNumberResult);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_Y)
+			{
+				setInstanceVariable(outputRValuePin->data->pinRValueResult, GML_y, outputVariablePin->data->pinNumberResult);
+			}
+			else if (inputVarNamePin.variableDataType == pinVariableDataType_CustomRValue)
+			{
+				auto rvalueInstancePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[4]);
+				auto& rvalueInstanceNode = *rvalueInstancePin->parentNodePtr;
+				processAction(rvalueInstanceNode, parentInstance, false);
+
+				if (rvalueInstancePin->data->isStringGMLHashSet)
+				{
+					RValueInputArgs[0] = outputRValuePin->data->pinRValueResult;
+					RValueInputArgs[1] = rvalueInstancePin->data->stringGMLHash;
+					RValueInputArgs[2] = outputVariablePin->data->pinRValueResult;
+					origStructSetFromHashFunc(tempResult, globalInstance, nullptr, 3, RValueInputArgs);
+				}
+				else
+				{
+					g_ModuleInterface->CallBuiltin("variable_instance_set", { outputRValuePin->data->pinRValueResult, rvalueInstancePin->pinStringVar.c_str(), outputVariablePin->data->pinRValueResult });
+				}
+			}
+			else
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown Variable data name %s", inputVarNamePin.pinVariableDataName.c_str());
+			}
+
+			return;
+		}
+		case nodeEditorNodeType_Add:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = parentNodeOutputNumberPinOne->data->pinNumberResult + parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			return;
+		}
+		case nodeEditorNodeType_Subtract:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = parentNodeOutputNumberPinOne->data->pinNumberResult - parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			return;
+		}
+		case nodeEditorNodeType_Multiply:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = parentNodeOutputNumberPinOne->data->pinNumberResult * parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			return;
+		}
+		case nodeEditorNodeType_Divide:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			if (parentNodeOutputNumberPinTwo->data->pinNumberResult == 0)
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Divide by zero error for node %d", curNode.nodeID);
+				return;
+			}
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = parentNodeOutputNumberPinOne->data->pinNumberResult / parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			return;
+		}
+		case nodeEditorNodeType_Boolean:
+		{
+			auto& outputBooleanPin = *curNode.outputPinPtrArr[0];
+			// TODO: Should change it to not require a string comparison every time
+			if (outputBooleanPin.booleanDataType == pinBooleanDataType_True)
+			{
+				outputBooleanPin.data->pinBoolDataResult = true;
+			}
+			else
+			{
+				outputBooleanPin.data->pinBoolDataResult = false;
+			}
+			return;
+		}
+		case nodeEditorNodeType_If:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			auto parentNodeOutputBooleanPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputBooleanNode = *parentNodeOutputBooleanPin->parentNodePtr;
+			processAction(parentNodeOutputBooleanNode, parentInstance, false);
+			return;
+		}
+		case nodeEditorNodeType_Compare:
+		{
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			auto& inputCompareTypePin = *curNode.inputPinPtrArr[2];
+			auto& currentNodeOutputBooleanPin = *curNode.outputPinPtrArr[0];
+			if (inputCompareTypePin.compareDataType == pinCompareDataType_Less)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputNumberPinOne->data->pinNumberResult < parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_LessOrEqual)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputNumberPinOne->data->pinNumberResult <= parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_Equal)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputNumberPinOne->data->pinNumberResult == parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_Greater)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputNumberPinOne->data->pinNumberResult > parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_GreaterOrEqual)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputNumberPinOne->data->pinNumberResult >= parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_NotEqual)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputNumberPinOne->data->pinNumberResult != parentNodeOutputNumberPinTwo->data->pinNumberResult;
+			}
+			return;
+		}
+		case nodeEditorNodeType_While:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			auto parentNodeOutputBooleanPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputBooleanNode = *parentNodeOutputBooleanPin->parentNodePtr;
+			processAction(parentNodeOutputBooleanNode, parentInstance, false);
+			return;
+		}
+		case nodeEditorNodeType_And:
+		{
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+
+			auto parentNodeOutputBooleanPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputBooleanNodeOne = *parentNodeOutputBooleanPinOne->parentNodePtr;
+			processAction(parentNodeOutputBooleanNodeOne, parentInstance, false);
+
+			// Short circuit
+			if (!parentNodeOutputBooleanPinOne->data->pinBoolDataResult)
+			{
+				currentNodeOutputNumberPin.data->pinBoolDataResult = false;
+				return;
+			}
+
+			auto parentNodeOutputBooleanPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputBooleanNodeTwo = *parentNodeOutputBooleanPinTwo->parentNodePtr;
+			processAction(parentNodeOutputBooleanNodeTwo, parentInstance, false);
+
+			currentNodeOutputNumberPin.data->pinBoolDataResult = parentNodeOutputBooleanPinTwo->data->pinBoolDataResult;
+			return;
+		}
+		case nodeEditorNodeType_Or:
+		{
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+
+			auto parentNodeOutputBooleanPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputBooleanNodeOne = *parentNodeOutputBooleanPinOne->parentNodePtr;
+			processAction(parentNodeOutputBooleanNodeOne, parentInstance, false);
+
+			// Short circuit
+			if (parentNodeOutputBooleanPinOne->data->pinBoolDataResult)
+			{
+				currentNodeOutputNumberPin.data->pinBoolDataResult = true;
+				return;
+			}
+
+			auto parentNodeOutputBooleanPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputBooleanNodeTwo = *parentNodeOutputBooleanPinTwo->parentNodePtr;
+			processAction(parentNodeOutputBooleanNodeTwo, parentInstance, false);
+
+			currentNodeOutputNumberPin.data->pinBoolDataResult = parentNodeOutputBooleanPinTwo->data->pinBoolDataResult;
+			return;
+		}
+		case nodeEditorNodeType_Not:
+		{
+			auto parentNodeOutputBooleanPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputBooleanNode = *parentNodeOutputBooleanPin->parentNodePtr;
+			processAction(parentNodeOutputBooleanNode, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinBoolDataResult = !parentNodeOutputBooleanPin->data->pinBoolDataResult;
+			return;
+		}
+		case nodeEditorNodeType_String:
+		{
+			auto& outputStringPin = *curNode.outputPinPtrArr[0];
+			if (!outputStringPin.data->isStringGMLHashSet)
+			{
+				outputStringPin.data->pinStringResult = outputStringPin.pinStringVar;
+				outputStringPin.data->stringGMLHash = g_ModuleInterface->CallBuiltin("variable_get_hash", { outputStringPin.pinStringVar.c_str() });
+				outputStringPin.data->isStringGMLHashSet = true;
+			}
+			return;
+		}
+		case nodeEditorNodeType_Print:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+
+			auto parentNodeOutputStringPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputStringNode = *parentNodeOutputStringPin->parentNodePtr;
+			processAction(parentNodeOutputStringNode, parentInstance, false);
+
+			DbgPrintEx(LOG_SEVERITY_INFO, "%s", parentNodeOutputStringPin->data->pinStringResult.c_str());
+			callbackManagerInterfacePtr->LogToFile(MODNAME, "%s", parentNodeOutputStringPin->data->pinStringResult.c_str());
+			return;
+		}
+		case nodeEditorNodeType_TypeCast:
+		{
+			auto parentNodeOutputPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNode = *parentNodeOutputPin->parentNodePtr;
+			processAction(parentNodeOutputNode, parentInstance, false);
+
+			auto& currentNodeOutputPin = *curNode.outputPinPtrArr[1];
+
+			if (parentNodeOutputPin->pinType == nodeEditorPinType_Integer)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_String)
+				{
+					currentNodeOutputPin.data->pinStringResult = std::format("{}", parentNodeOutputPin->data->pinIntegerResult);
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_Number)
+				{
+					currentNodeOutputPin.data->pinNumberResult = parentNodeOutputPin->data->pinIntegerResult;
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinIntegerResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_Boolean)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinBoolDataResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_Number)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_String)
+				{
+					currentNodeOutputPin.data->pinStringResult = std::format("{}", parentNodeOutputPin->data->pinNumberResult);
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinNumberResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_String)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinStringResult.c_str();
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_RValue)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_String)
+				{
+					currentNodeOutputPin.data->pinStringResult = parentNodeOutputPin->data->pinRValueResult.ToString();
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_Number)
+				{
+					currentNodeOutputPin.data->pinNumberResult = parentNodeOutputPin->data->pinRValueResult.ToDouble();
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_Integer)
+				{
+					currentNodeOutputPin.data->pinIntegerResult = parentNodeOutputPin->data->pinRValueResult.ToInt32();
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_Boolean)
+				{
+					currentNodeOutputPin.data->pinBoolDataResult = parentNodeOutputPin->data->pinRValueResult.ToBoolean();
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_Instance)
+				{
+					currentNodeOutputPin.data->pinInstanceResult = parentNodeOutputPin->data->pinRValueResult.ToInstance();
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_Array)
+				{
+					// TODO: Maybe do some type checking?
+					currentNodeOutputPin.data->pinArrayResult = parentNodeOutputPin->data->pinRValueResult;
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_DSMap)
+				{
+					// TODO: Maybe do some type checking?
+					currentNodeOutputPin.data->pinDSMapResult = parentNodeOutputPin->data->pinRValueResult;
+				}
+				else if (currentNodeOutputPin.pinType == nodeEditorPinType_DSList)
+				{
+					// TODO: Maybe do some type checking?
+					currentNodeOutputPin.data->pinDSListResult = parentNodeOutputPin->data->pinRValueResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_Instance)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinInstanceResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_Array)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinArrayResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_DSMap)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinDSMapResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_DSList)
+			{
+				if (currentNodeOutputPin.pinType == nodeEditorPinType_RValue)
+				{
+					currentNodeOutputPin.data->pinRValueResult = parentNodeOutputPin->data->pinDSListResult;
+				}
+				else
+				{
+					callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown type cast to %s %d", (*curNode.outputPinPtrArr[0]).pinVariableTypeName.c_str(), currentNodeOutputPin.pinType);
+				}
+				}
+			else
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown input type cast %s %d", (*curNode.inputPinPtrArr[0]).pinVariableTypeName.c_str(), parentNodeOutputPin->pinType);
+			}
+			return;
+		}
+		case nodeEditorNodeType_AppendString:
+		{
+			auto parentNodeOutputStringPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputStringNodeOne = *parentNodeOutputStringPinOne->parentNodePtr;
+			processAction(parentNodeOutputStringNodeOne, parentInstance, false);
+
+			auto parentNodeOutputStringPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputStringNodeTwo = *parentNodeOutputStringPinTwo->parentNodePtr;
+			processAction(parentNodeOutputStringNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputStringPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputStringPin.data->pinStringResult = parentNodeOutputStringPinOne->data->pinStringResult + parentNodeOutputStringPinTwo->data->pinStringResult;
+			return;
+		}
+		case nodeEditorNodeType_Integer:
+		{
+			auto& outputIntegerPin = *curNode.outputPinPtrArr[0];
+			outputIntegerPin.data->pinIntegerResult = outputIntegerPin.pinIntegerVar;
+			return;
+		}
+		case nodeEditorNodeType_IntegerCeiling:
+		{
+			auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+			processAction(parentNodeOutputNumberNode, parentInstance, false);
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = static_cast<int>(ceil(parentNodeOutputNumberPin->data->pinNumberResult));
+			return;
+		}
+		case nodeEditorNodeType_IntegerFloor:
+		{
+			auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+			processAction(parentNodeOutputNumberNode, parentInstance, false);
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = static_cast<int>(floor(parentNodeOutputNumberPin->data->pinNumberResult));
+			return;
+		}
+		case nodeEditorNodeType_IntegerRound:
+		{
+			auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+			processAction(parentNodeOutputNumberNode, parentInstance, false);
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = static_cast<int>(lround(parentNodeOutputNumberPin->data->pinNumberResult));
+			return;
+		}
+		case nodeEditorNodeType_IntegerAdd:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputIntegerPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputIntegerNodeOne = *parentNodeOutputIntegerPinOne->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeOne, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeTwo = *parentNodeOutputIntegerPinTwo->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult + parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			return;
+		}
+		case nodeEditorNodeType_IntegerSubtract:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputIntegerPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputIntegerNodeOne = *parentNodeOutputIntegerPinOne->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeOne, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeTwo = *parentNodeOutputIntegerPinTwo->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult - parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			return;
+		}
+		case nodeEditorNodeType_IntegerMultiply:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputIntegerPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputIntegerNodeOne = *parentNodeOutputIntegerPinOne->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeOne, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeTwo = *parentNodeOutputIntegerPinTwo->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult * parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			return;
+		}
+		case nodeEditorNodeType_IntegerDivide:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputIntegerPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputIntegerNodeOne = *parentNodeOutputIntegerPinOne->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeOne, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeTwo = *parentNodeOutputIntegerPinTwo->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeTwo, parentInstance, false);
+
+			if (parentNodeOutputIntegerPinTwo->data->pinIntegerResult == 0)
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Divide by zero error for node %d", curNode.nodeID);
+				return;
+			}
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult / parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			return;
+		}
+		case nodeEditorNodeType_IntegerCompare:
+		{
+			auto parentNodeOutputIntegerPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputIntegerNodeOne = *parentNodeOutputIntegerPinOne->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeOne, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeTwo = *parentNodeOutputIntegerPinTwo->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeTwo, parentInstance, false);
+
+			auto& inputCompareTypePin = *curNode.inputPinPtrArr[2];
+			auto& currentNodeOutputBooleanPin = *curNode.outputPinPtrArr[0];
+			if (inputCompareTypePin.compareDataType == pinCompareDataType_Less)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult < parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_LessOrEqual)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult <= parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_Equal)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult == parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_Greater)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult > parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_GreaterOrEqual)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult >= parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			}
+			else if (inputCompareTypePin.compareDataType == pinCompareDataType_NotEqual)
+			{
+				currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputIntegerPinOne->data->pinIntegerResult != parentNodeOutputIntegerPinTwo->data->pinIntegerResult;
+			}
+			return;
+		}
+		case nodeEditorNodeType_Random:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			std::uniform_real_distribution<double> distribution(parentNodeOutputNumberPinOne->data->pinNumberResult, parentNodeOutputNumberPinTwo->data->pinNumberResult);
+			currentNodeOutputNumberPin.data->pinNumberResult = distribution(randomGenerator);
+			return;
+		}
+		case nodeEditorNodeType_IntegerRandom:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputIntegerPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputIntegerNodeOne = *parentNodeOutputIntegerPinOne->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeOne, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeTwo = *parentNodeOutputIntegerPinTwo->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			std::uniform_int_distribution<int> distribution(parentNodeOutputIntegerPinOne->data->pinIntegerResult, parentNodeOutputIntegerPinTwo->data->pinIntegerResult);
+			currentNodeOutputIntegerPin.data->pinIntegerResult = distribution(randomGenerator);
+			return;
+		}
+		case nodeEditorNodeType_Modulus:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinIntegerResult = parentNodeOutputNumberPinOne->data->pinIntegerResult % parentNodeOutputNumberPinTwo->data->pinIntegerResult;
+			return;
+		}
+		case nodeEditorNodeType_SquareRoot:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+			processAction(parentNodeOutputNumberNode, parentInstance, false);
+
+			if (parentNodeOutputNumberPin->data->pinNumberResult < 0)
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Trying to square root %f for node %d", parentNodeOutputNumberPin->data->pinNumberResult, curNode.nodeID);
+				return;
+			}
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = sqrt(parentNodeOutputNumberPin->data->pinNumberResult);
+			return;
+		}
+		case nodeEditorNodeType_Logarithm:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeOne = *parentNodeOutputNumberPinOne->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeOne, parentInstance, false);
+
+			auto parentNodeOutputNumberPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeTwo = *parentNodeOutputNumberPinTwo->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeTwo, parentInstance, false);
+
+			if (parentNodeOutputNumberPinOne->data->pinNumberResult <= 0)
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Trying to log %f for node %d", parentNodeOutputNumberPinOne->data->pinNumberResult, curNode.nodeID);
+				return;
+			}
+
+			if (parentNodeOutputNumberPinTwo->data->pinNumberResult <= 0)
+			{
+				callbackManagerInterfacePtr->LogToFile(MODNAME, "Trying to log %f for node %d", parentNodeOutputNumberPinTwo->data->pinNumberResult, curNode.nodeID);
+				return;
+			}
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = log(parentNodeOutputNumberPinOne->data->pinNumberResult) / log(parentNodeOutputNumberPinTwo->data->pinNumberResult);
+			return;
+		}
+		case nodeEditorNodeType_Sine:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+			processAction(parentNodeOutputNumberNode, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = sin(parentNodeOutputNumberPin->data->pinNumberResult);
+			return;
+		}
+		case nodeEditorNodeType_Cosine:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+			processAction(parentNodeOutputNumberNode, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = cos(parentNodeOutputNumberPin->data->pinNumberResult);
+			return;
+		}
+		case nodeEditorNodeType_Tangent:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+			processAction(parentNodeOutputNumberNode, parentInstance, false);
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = tan(parentNodeOutputNumberPin->data->pinNumberResult);
+			return;
+		}
+		case nodeEditorNodeType_AssetGetIndex:
+		{
+			auto parentNodeOutputStringPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputStringNode = *parentNodeOutputStringPin->parentNodePtr;
+			processAction(parentNodeOutputStringNode, parentInstance, false);
+
+			auto& currentNodeOutputStringPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputStringPin.data->pinIntegerResult = g_ModuleInterface->CallBuiltin("asset_get_index", { parentNodeOutputStringPin->data->pinStringResult.c_str() }).ToInt32();
+			return;
+		}
+		case nodeEditorNodeType_IsRValueDefined:
+		{
+			auto parentNodeOutputRValuePin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputRValueNode = *parentNodeOutputRValuePin->parentNodePtr;
+			processAction(parentNodeOutputRValueNode, parentInstance, false);
+
+			auto& currentNodeOutputBooleanPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputBooleanPin.data->pinBoolDataResult = parentNodeOutputRValuePin->data->pinRValueResult.m_Kind != VALUE_UNDEFINED;
+			return;
+		}
+		case nodeEditorNodeType_CollisionCircleList:
+		{
+			auto parentNodeOutputNumberPinX = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputNumberNodeX = *parentNodeOutputNumberPinX->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeX, parentInstance, false);
+
+			auto parentNodeOutputNumberPinY = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNumberNodeY = *parentNodeOutputNumberPinY->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeY, parentInstance, false);
+
+			auto parentNodeOutputNumberPinRadius = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+			auto& parentNodeOutputNumberNodeRadius = *parentNodeOutputNumberPinRadius->parentNodePtr;
+			processAction(parentNodeOutputNumberNodeRadius, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinObjectIndex = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[3]);
+			auto& parentNodeOutputIntegerNodeObjectIndex = *parentNodeOutputIntegerPinObjectIndex->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeObjectIndex, parentInstance, false);
+
+			auto parentNodeOutputBooleanPinOrdered = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[4]);
+			auto& parentNodeOutputBooleanNodeOrdered = *parentNodeOutputBooleanPinOrdered->parentNodePtr;
+			processAction(parentNodeOutputBooleanNodeOrdered, parentInstance, false);
+
+			auto parentNodeOutputListPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[5]);
+			auto& parentNodeOutputListNode = *parentNodeOutputListPin->parentNodePtr;
+			processAction(parentNodeOutputListNode, parentInstance, false);
+
+			g_ModuleInterface->CallBuiltin("collision_circle_list",
+				{
+					parentNodeOutputNumberPinX->data->pinNumberResult,
+					parentNodeOutputNumberPinY->data->pinNumberResult,
+					parentNodeOutputNumberPinRadius->data->pinNumberResult,
+					parentNodeOutputIntegerPinObjectIndex->data->pinIntegerResult,
+					false,
+					true,
+					parentNodeOutputListPin->data->pinDSListResult,
+					parentNodeOutputBooleanPinOrdered->data->pinBoolDataResult,
+				});
+
+			auto& currentNodeOutputDSListPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputDSListPin.data->pinDSListResult = parentNodeOutputListPin->data->pinDSListResult;
+			return;
+		}
+		case nodeEditorNodeType_DSListGet:
+		{
+			auto parentNodeOutputDSListPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputDSListNode = *parentNodeOutputDSListPin->parentNodePtr;
+			processAction(parentNodeOutputDSListNode, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinIndex = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeIndex = *parentNodeOutputIntegerPinIndex->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeIndex, parentInstance, false);
+
+
+			RValue ret = g_ModuleInterface->CallBuiltin("ds_list_find_value",
+				{
+					parentNodeOutputDSListPin->data->pinDSListResult,
+					parentNodeOutputIntegerPinIndex->data->pinIntegerResult,
+				});
+
+			auto& currentNodeOutputRValuePin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputRValuePin.data->pinRValueResult = ret;
+			return;
+		}
+		case nodeEditorNodeType_DSListSize:
+		{
+			auto parentNodeOutputDSListPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputDSListNode = *parentNodeOutputDSListPin->parentNodePtr;
+			processAction(parentNodeOutputDSListNode, parentInstance, false);
+
+			RValue ret = g_ModuleInterface->CallBuiltin("ds_list_size",
+				{
+					parentNodeOutputDSListPin->data->pinDSListResult,
+				});
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = ret.ToInt32();
+			return;
+		}
+		case nodeEditorNodeType_DSListCreate:
+		{
+			curNode.outputPinPtrArr[0]->data->pinDSListResult = g_ModuleInterface->CallBuiltin("ds_list_create", {});
+			return;
+		}
+		case nodeEditorNodeType_DSListClear:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+
+			auto parentNodeOutputDSListPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputDSListNode = *parentNodeOutputDSListPin->parentNodePtr;
+			processAction(parentNodeOutputDSListNode, parentInstance, false);
+
+			g_ModuleInterface->CallBuiltin("ds_list_clear", { parentNodeOutputDSListPin->data->pinDSListResult });
+
+			return;
+		}
+		case nodeEditorNodeType_DSListDestroy:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+
+			auto parentNodeOutputDSListPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputDSListNode = *parentNodeOutputDSListPin->parentNodePtr;
+			processAction(parentNodeOutputDSListNode, parentInstance, false);
+
+			g_ModuleInterface->CallBuiltin("ds_list_destroy", { parentNodeOutputDSListPin->data->pinDSListResult });
+
+			return;
+		}
+		case nodeEditorNodeType_DSMapGet:
+		{
+			auto parentNodeOutputDSMapPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputDSMapNode = *parentNodeOutputDSMapPin->parentNodePtr;
+			processAction(parentNodeOutputDSMapNode, parentInstance, false);
+
+			auto parentNodeOutputStringPinIndex = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputStringNodeIndex = *parentNodeOutputStringPinIndex->parentNodePtr;
+			processAction(parentNodeOutputStringNodeIndex, parentInstance, false);
+
+			RValue ret = g_ModuleInterface->CallBuiltin("ds_map_find_value",
+				{
+					parentNodeOutputDSMapPin->data->pinDSMapResult,
+					parentNodeOutputStringPinIndex->data->pinStringResult.c_str(),
+				});
+
+			auto& currentNodeOutputRValuePin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputRValuePin.data->pinRValueResult = ret;
+			return;
+		}
+		case nodeEditorNodeType_DSMapKeysToArray:
+		{
+			auto parentNodeOutputDSMapPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputDSMapNode = *parentNodeOutputDSMapPin->parentNodePtr;
+			processAction(parentNodeOutputDSMapNode, parentInstance, false);
+
+			RValue ret = g_ModuleInterface->CallBuiltin("ds_map_keys_to_array",
+				{
+					parentNodeOutputDSMapPin->data->pinDSMapResult,
+				});
+
+			auto& currentNodeOutputArrayPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputArrayPin.data->pinArrayResult = ret;
+			return;
+		}
+		case nodeEditorNodeType_ArrayGet:
+		{
+			auto parentNodeOutputArrayPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputArrayNode = *parentNodeOutputArrayPin->parentNodePtr;
+			processAction(parentNodeOutputArrayNode, parentInstance, false);
+
+			auto parentNodeOutputIntegerPinIndex = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNodeIndex = *parentNodeOutputIntegerPinIndex->parentNodePtr;
+			processAction(parentNodeOutputIntegerNodeIndex, parentInstance, false);
+
+			RValue ret = g_ModuleInterface->CallBuiltin("array_get",
+				{
+					parentNodeOutputArrayPin->data->pinArrayResult,
+					parentNodeOutputIntegerPinIndex->data->pinIntegerResult,
+				});
+
+			auto& currentNodeOutputRValuePin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputRValuePin.data->pinRValueResult = ret;
+			return;
+		}
+		case nodeEditorNodeType_ArrayLength:
+		{
+			auto parentNodeOutputArrayPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeOutputArrayNode = *parentNodeOutputArrayPin->parentNodePtr;
+			processAction(parentNodeOutputArrayNode, parentInstance, false);
+
+			RValue ret = g_ModuleInterface->CallBuiltin("array_length",
+				{
+					parentNodeOutputArrayPin->data->pinArrayResult,
+				});
+
+			auto& currentNodeOutputIntegerPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputIntegerPin.data->pinIntegerResult = ret.ToInt32();
+			return;
+		}
+		case nodeEditorNodeType_TernaryOperator:
+		{
+			auto parentNodeOutputPinBoolean = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputNodeBoolean = *parentNodeOutputPinBoolean->parentNodePtr;
+			processAction(parentNodeOutputNodeBoolean, parentInstance, false);
+
+			auto& currentNodeOutputPin = *curNode.outputPinPtrArr[0];
+
+			if (parentNodeOutputPinBoolean->data->pinBoolDataResult)
+			{
+				auto parentNodeOutputPinOne = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+				auto& parentNodeOutputNodeOne = *parentNodeOutputPinOne->parentNodePtr;
+				processAction(parentNodeOutputNodeOne, parentInstance, false);
+
+				copyPinValue(parentNodeOutputPinOne, currentNodeOutputPin);
+			}
+			else
+			{
+				auto parentNodeOutputPinTwo = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[3]);
+				auto& parentNodeOutputNodeTwo = *parentNodeOutputPinTwo->parentNodePtr;
+				processAction(parentNodeOutputNodeTwo, parentInstance, false);
+
+				copyPinValue(parentNodeOutputPinTwo, currentNodeOutputPin);
+			}
+			return;
+		}
+		case nodeEditorNodeType_SetDebugLevel:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			auto parentNodeOutputIntegerPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputIntegerNode = *parentNodeOutputIntegerPin->parentNodePtr;
+			processAction(parentNodeOutputIntegerNode, parentInstance, false);
+
+			curLogLevel = parentNodeOutputIntegerPin->data->pinIntegerResult;
+			return;
+		}
+		case nodeEditorNodeType_CacheVariable:
+		{			
+			auto& currentNodeOutputPin = *curNode.outputPinPtrArr[0];
+
+			if (!currentNodeOutputPin.data->isCached)
+			{
+				auto parentNodeOutputPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+				auto& parentNodeOutputNode = *parentNodeOutputPin->parentNodePtr;
+				processAction(parentNodeOutputNode, parentInstance, false);
+				copyPinValue(parentNodeOutputPin, currentNodeOutputPin);
+				currentNodeOutputPin.data->isCached = true;
+			}
+			return;
+		}
+		case nodeEditorNodeType_PlaySound:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			auto outputSoundPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& outputSoundNode = *outputSoundPin->parentNodePtr;
+			processAction(outputSoundNode, parentInstance, false);
+
+			auto& soundData = outputSoundPin->data->pinSoundDataResult;
+			
+			g_ModuleInterface->CallBuiltin("audio_play_sound", { soundData.soundRValue.soundIndex, 10, false });
+			
+			return;
+		}
+		case nodeEditorNodeType_PointDirection:
+		{
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeSourceNumberPinX = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[0]);
+			auto& parentNodeSourceNumberNodeX = *parentNodeSourceNumberPinX->parentNodePtr;
+			processAction(parentNodeSourceNumberNodeX, parentInstance, false);
+
+			auto parentNodeSourceNumberPinY = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeSourceNumberNodeY = *parentNodeSourceNumberPinY->parentNodePtr;
+			processAction(parentNodeSourceNumberNodeY, parentInstance, false);
+
+			auto parentNodeSourceTargetPinX = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[2]);
+			auto& parentNodeSourceTargetNodeX = *parentNodeSourceTargetPinX->parentNodePtr;
+			processAction(parentNodeSourceTargetNodeX, parentInstance, false);
+
+			auto parentNodeSourceTargetPinY = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[3]);
+			auto& parentNodeSourceTargetNodeY = *parentNodeSourceTargetPinY->parentNodePtr;
+			processAction(parentNodeSourceTargetNodeY, parentInstance, false);
+
+			double yDiff = parentNodeSourceTargetPinY->data->pinNumberResult - parentNodeSourceNumberPinY->data->pinNumberResult;
+			double xDiff = parentNodeSourceTargetPinX->data->pinNumberResult - parentNodeSourceNumberPinX->data->pinNumberResult;
+
+			auto& currentNodeOutputNumberPin = *curNode.outputPinPtrArr[0];
+			currentNodeOutputNumberPin.data->pinNumberResult = fmod(atan2(-yDiff, xDiff) / std::numbers::pi * 180 + 360, 360);
+			return;
+		}
+		case nodeEditorNodeType_FlushCache:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			auto curOuputPinPtr = curNode.outputPinPtrArr[1];
+			for (auto& nodeLink : curOuputPinPtr->nodeLinks)
+			{
+				nodeEditorNodePin* outputFlushPin = (nodeLink.startPinID == curOuputPinPtr->pinID) ? nodeLink.endPinPtr : nodeLink.startPinPtr;
+				auto curNodePtr = outputFlushPin->parentNodePtr;
+				while (curNodePtr->nodeType == nodeEditorNodeType_MergeFlush)
+				{
+					if (curNodePtr->outputPinPtrArr.empty())
+					{
+						return;
+					}
+					curNodePtr = getConnectedOutputPinForInputPin(curNode, *curNodePtr->outputPinPtrArr[0])->parentNodePtr;
+				}
+				curNodePtr->outputPinPtrArr[0]->data->isCached = false;
+			}
+			return;
+		}
+		case nodeEditorNodeType_ArrayCreate:
+		{
+			curNode.outputPinPtrArr[0]->data->pinArrayResult = g_ModuleInterface->CallBuiltin("array_create", { 0 });
+			return;
+		}
+		case nodeEditorNodeType_ArrayPush:
+		{
+			if (!isCodeFlow)
+			{
+				return;
+			}
+			// TODO: Might be useful to have a dirty flag? Could be useful if some numbers don't change that much
+			auto parentNodeOutputArrayPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+			auto& parentNodeOutputArrayNode = *parentNodeOutputArrayPin->parentNodePtr;
+			processAction(parentNodeOutputArrayNode, parentInstance, false);
+
+			auto parentNodeOutputPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[3]);
+			auto& parentNodeOutputNode = *parentNodeOutputPin->parentNodePtr;
+			processAction(parentNodeOutputNode, parentInstance, false);
+
+			if (parentNodeOutputPin->pinType == nodeEditorPinType_Integer)
+			{
+				g_ModuleInterface->CallBuiltin("array_push", { parentNodeOutputArrayPin->data->pinArrayResult, parentNodeOutputPin->data->pinIntegerResult });
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_Number)
+			{
+				g_ModuleInterface->CallBuiltin("array_push", { parentNodeOutputArrayPin->data->pinArrayResult, parentNodeOutputPin->data->pinNumberResult });
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_String)
+			{
+				g_ModuleInterface->CallBuiltin("array_push", { parentNodeOutputArrayPin->data->pinArrayResult, parentNodeOutputPin->data->pinStringResult.c_str() });
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_RValue)
+			{
+				g_ModuleInterface->CallBuiltin("array_push", { parentNodeOutputArrayPin->data->pinArrayResult, parentNodeOutputPin->data->pinRValueResult });
+			}
+			else if (parentNodeOutputPin->pinType == nodeEditorPinType_Instance)
+			{
+				g_ModuleInterface->CallBuiltin("array_push", { parentNodeOutputArrayPin->data->pinArrayResult, parentNodeOutputPin->data->pinInstanceResult });
+			}
+			return;
+		}
+		default:
+		{
+			callbackManagerInterfacePtr->LogToFile(MODNAME, "Unhandled node type %d for node %d in process action", curNode.nodeType, curNode.nodeID);
+		}
+	}
+}
+
+// Should only be used for nodes that use code flow
+void processCodeActionFlow(nodeEditorNode& curNode, CInstance* parentInstance, std::vector<nodeEditorNode*>& loopBlockStack)
+{
+	if (curLogLevel >= 1)
+	{
+		DbgPrintEx(LOG_SEVERITY_INFO, "node ID: %d node Type: %d node Name: %s", curNode.nodeID, curNode.nodeType, curNode.nodeName.c_str());
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "node ID: %d node Type: %d node Name: %s", curNode.nodeID, curNode.nodeType, curNode.nodeName.c_str());
+	}
+
+	// TODO: Not sure what's causing an error where some nodes just suddenly lose their pins? Maybe related to quitting out and playing again?
+	processAction(curNode, parentInstance, true);
+
+	if (curNode.outputPinIDArr.empty())
+	{
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "No output pin for node %s, id: %d", curNode.nodeName.c_str(), curNode.nodeID);
+		return;
+	}
+	
+	int nextCodeFlowIndex = 0;
+	if (curNode.nodeType == nodeEditorNodeType_If)
+	{
+		auto parentNodeOutputBooleanPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+		if (parentNodeOutputBooleanPin->data->pinBoolDataResult)
+		{
+			nextCodeFlowIndex = 0;
+		}
+		else
+		{
+			nextCodeFlowIndex = 1;
+		}
+	}
+	else if (curNode.nodeType == nodeEditorNodeType_While)
+	{
+		auto parentNodeOutputBooleanPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+		if (parentNodeOutputBooleanPin->data->pinBoolDataResult)
+		{
+			loopBlockStack.push_back(&curNode);
+			nextCodeFlowIndex = 0;
+		}
+		else
+		{
+			nextCodeFlowIndex = 1;
+		}
+	}
+	auto& outputPin = *curNode.outputPinPtrArr[nextCodeFlowIndex];
+	if (outputPin.pinType != nodeEditorPinType_CodeFlow)
+	{
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Pin index %d isn't code flow for node %s, id: %d", nextCodeFlowIndex, curNode.nodeName.c_str(), curNode.nodeID);
+		return;
+	}
+	if (outputPin.nodeLinks.empty())
+	{
+		if (!loopBlockStack.empty())
+		{
+			auto nextNode = loopBlockStack.back();
+			loopBlockStack.pop_back();
+			processCodeActionFlow(*nextNode, parentInstance, loopBlockStack);
+		}
+		return;
+	}
+
+	auto startPin = outputPin.nodeLinks[0].startPinID;
+	auto endPin = outputPin.nodeLinks[0].endPinID;
+	if (startPin != outputPin.pinID && endPin != outputPin.pinID)
+	{
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Invalid pin link for node %s, id: %d", curNode.nodeName.c_str(), curNode.nodeID);
+		return;
+	}
+	auto& nextPin = (startPin == outputPin.pinID) ? *outputPin.nodeLinks[0].endPinPtr : *outputPin.nodeLinks[0].startPinPtr;
+	if (nextPin.pinType != nodeEditorPinType_CodeFlow)
+	{
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "First pin type isn't code flow for node %s, id: %d", curNode.nodeName.c_str(), curNode.nodeID);
+		return;
+	}
+	auto& nextNode = *nextPin.parentNodePtr;
+	if (curNode.nodeType == nodeEditorNodeType_Delay)
+	{
+		auto parentNodeOutputNumberPin = getConnectedOutputPinForInputPin(curNode, *curNode.inputPinPtrArr[1]);
+		auto& parentNodeOutputNumberNode = *parentNodeOutputNumberPin->parentNodePtr;
+		processAction(parentNodeOutputNumberNode, parentInstance, false);
+		
+		if (parentNodeOutputNumberPin->data->pinIntegerResult <= 0)
+		{
+			processCodeActionFlow(nextNode, parentInstance, loopBlockStack);
+		}
+		else
+		{
+			actionQueue.push(std::make_pair<int, actionQueueData>(curFrameNum + parentNodeOutputNumberPin->data->pinIntegerResult, actionQueueData(parentInstance, &nextNode, loopBlockStack)));
+		}
+	}
+	else
+	{
+		processCodeActionFlow(nextNode, parentInstance, loopBlockStack);
+	}
+}
+
+void checkOnTrigger(CInstance* parentInstance, nodeEditorNodeTypeEnum triggerType)
+{
+	RValue attackID = getInstanceVariable(parentInstance, GML_attackID);
+
+	auto& charData = charDataMap[playingCharName];
+	std::vector<nodeEditorNode*> loopBlockStack;
+	if (attackID.m_Kind == VALUE_STRING)
+	{
+		const char* strAttackID = attackID.ToCString();
+
+		if (charData.attackName.compare(strAttackID) == 0)
+		{
+			for (auto& curNodePair : charData.mainWeaponNodeEditor.nodeMap)
+			{
+				auto& curNode = curNodePair.second;
+				if (curNode.nodeType == triggerType)
+				{
+					processCodeActionFlow(curNode, parentInstance, loopBlockStack);
+					break;
+				}
+			}
+			return;
+		}
+
+		if (charData.specialName.compare(strAttackID) == 0)
+		{
+			for (auto& curNodePair : charData.specialAttackNodeEditor.nodeMap)
+			{
+				auto& curNode = curNodePair.second;
+				if (curNode.nodeType == triggerType)
+				{
+					processCodeActionFlow(curNode, parentInstance, loopBlockStack);
+					break;
+				}
+			}
+			return;
+		}
+
+		auto& curProjectileDataList = projectileDataListMap[strAttackID];
+		for (auto& projectileData : curProjectileDataList)
+		{
+			// TODO: Maybe store the root nodes in a separate list to make it easier to get them
+			for (auto& curNodePair : projectileData.nodeEditor.nodeMap)
+			{
+				auto& curNode = curNodePair.second;
+				if (curNode.nodeType == triggerType)
+				{
+					processCodeActionFlow(curNode, parentInstance, loopBlockStack);
+					break;
+				}
 			}
 		}
+		return;
 	}
-}
 
-void checkProjectileActionList(const characterData& charData, CInstance* parentInstance, const std::vector<projectileActionData>& projectileActionList, projectileActionTriggerTypeEnum onTriggerType)
-{
-	for (auto& projectileAction : projectileActionList)
+	if (triggerType == nodeEditorNodeType_OnSkillApply || triggerType == nodeEditorNodeType_OnFrameStep)
 	{
-		if (projectileAction.projectileActionTriggerType == onTriggerType)
+		// TODO: Check to make sure attacks can't accidentally run this somehow
+		for (auto& curSkillData : charData.skillDataList)
 		{
-			activateAction(charData, parentInstance, projectileAction.triggeredActionName);
+			for (auto& curNodePair : curSkillData.nodeEditor.nodeMap)
+			{
+				auto& curNode = curNodePair.second;
+				if (curNode.nodeType == triggerType)
+				{
+					processCodeActionFlow(curNode, parentInstance, loopBlockStack);
+					break;
+				}
+			}
 		}
-	}
-}
-
-void checkOnTrigger(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args, CInstance* parentInstance, projectileActionTriggerTypeEnum onTriggerType)
-{
-	CInstance* Self = std::get<0>(Args);
-
-	RValue attackID = getInstanceVariable(Self, GML_attackID);
-
-	RValue playerManager = g_ModuleInterface->CallBuiltin("instance_find", { objPlayerManagerIndex, 0 });
-	RValue playerCharacter = getInstanceVariable(playerManager, GML_playerCharacter);
-	auto& charData = charDataMap[playingCharName];
-	const char* strAttackID = attackID.ToCString();
-
-	// TODO: Probably want to avoid string comparison for the attack name
-
-	if (charData.attackName.compare(strAttackID) == 0)
-	{
-		RValue weapons = getInstanceVariable(playerManager, GML_weapons);
-		RValue mainWeapon = g_ModuleInterface->CallBuiltin("variable_instance_get", { weapons, strAttackID });
-		RValue level = getInstanceVariable(mainWeapon, GML_level);
-		auto& weaponLevelData = charData.weaponLevelDataList[level.ToInt32() - 1];
-		checkProjectileActionList(charData, parentInstance, weaponLevelData.projectileActionList, onTriggerType);
-	}
-
-	if (charData.specialName.compare(strAttackID) == 0)
-	{
-		checkProjectileActionList(charData, parentInstance, charData.specialProjectileActionList, onTriggerType);
-	}
-
-	auto& curProjectileDataList = projectileDataListMap[strAttackID];
-	for (auto& projectileData : curProjectileDataList)
-	{
-		checkProjectileActionList(charData, parentInstance, projectileData.projectileActionList, onTriggerType);
 	}
 }
 
 void AttackCreateAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
 {
 	CInstance* Self = std::get<0>(Args);
-	checkOnTrigger(Args, Self, projectileActionTriggerType_OnCreate);
+	
+	checkOnTrigger(Self, nodeEditorNodeType_OnCreateProjectile);
+}
+
+void AttackStepBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
+{
+	CInstance* Self = std::get<0>(Args);
+
+	checkOnTrigger(Self, nodeEditorNodeType_OnFrameStep);
 }
 
 void AttackDestroyBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
 {
 	CInstance* Self = std::get<0>(Args);
-	checkOnTrigger(Args, Self, projectileActionTriggerType_OnDestroy);
+	
+	checkOnTrigger(Self, nodeEditorNodeType_OnDestroyProjectile);
 }
+
+bool isInPlayerStep = false;
 
 void PlayerStepBefore(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
 {
+	isInPlayerStep = true;
 	curFrameNum++;
+	if (!charDataMap.contains(playingCharName))
+	{
+		return;
+	}
 	auto& charData = charDataMap[playingCharName];
 	while (!actionQueue.empty() && curFrameNum >= actionQueue.top().first)
 	{
-		auto& curActionQueueData = actionQueue.top().second;
+		auto curActionQueueData = actionQueue.top().second;
 		actionQueue.pop();
 		// TODO: Maybe should cache the instance exist function
-		if (g_ModuleInterface->CallBuiltin("instance_exists", { curActionQueueData.parentInstance }).ToBoolean())
+		if (g_ModuleInterface->CallBuiltin("instance_exists", { curActionQueueData.parentInstancePtr }).ToBoolean())
 		{
-			activateAction(charData, curActionQueueData.parentInstance, curActionQueueData.triggeredActionName);
+			processCodeActionFlow(*(curActionQueueData.curNodePtr), curActionQueueData.parentInstancePtr, curActionQueueData.loopBlockStack);
 		}
+		else
+		{
+			callbackManagerInterfacePtr->LogToFile(MODNAME, "Instance doesn't exist %d", curFrameNum);
+		}
+	}
+}
+
+void PlayerStepAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
+{
+	isInPlayerStep = false;
+}
+
+void BaseMobStepAfter(std::tuple<CInstance*, CInstance*, CCode*, int, RValue*>& Args)
+{
+	if (isInPlayerStep)
+	{
+		CInstance* Self = std::get<0>(Args);
+
+		checkOnTrigger(Self, nodeEditorNodeType_OnFrameStep);
 	}
 }
 

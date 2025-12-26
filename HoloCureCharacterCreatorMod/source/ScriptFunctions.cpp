@@ -9,8 +9,7 @@ extern CallbackManagerInterface* callbackManagerInterfacePtr;
 extern std::unordered_map<std::string, characterData> charDataMap;
 std::string playingCharName;
 std::unordered_map<std::string, std::vector<buffData>> buffDataListMap;
-std::unordered_map<std::string, std::vector<actionData>> actionDataListMap;
-std::unordered_map<std::string, std::vector<projectileData>> projectileDataListMap;
+std::unordered_map<std::string, std::vector<projectileDataWrapper>> projectileDataListMap;
 
 int curFrameNum = 0;
 
@@ -27,22 +26,22 @@ RValue& InitializeCharacterAfter(CInstance* Self, CInstance* Other, RValue& Retu
 	RValue charData = getInstanceVariable(Self, GML_charData);
 	RValue charName = getInstanceVariable(charData, GML_charName);
 	playingCharName = charName.ToString();
+	if (!charDataMap.contains(playingCharName))
+	{
+		return ReturnValue;
+	}
 	curFrameNum = 0;
 	auto& curCharData = charDataMap[playingCharName];
 	buffDataListMap.clear();
-	actionDataListMap.clear();
 	projectileDataListMap.clear();
 	for (auto& buffData : curCharData.buffDataList)
 	{
 		buffDataListMap[buffData.buffName].push_back(buffData);
 	}
-	for (auto& actionData : curCharData.actionDataList)
-	{
-		actionDataListMap[actionData.actionName].push_back(actionData);
-	}
 	for (auto& projectileData : curCharData.projectileDataList)
 	{
-		projectileDataListMap[projectileData.projectileName].push_back(projectileData);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "%s", projectileData.data.projectileName.c_str());
+		projectileDataListMap[projectileData.data.projectileName].push_back(projectileData);
 	}
 	return ReturnValue;
 }

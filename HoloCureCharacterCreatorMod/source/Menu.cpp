@@ -1,4 +1,5 @@
 #pragma comment(lib, "d3d11.lib")
+#define IMGUI_DEFINE_MATH_OPERATORS
 
 #include "Menu.h"
 #include "ModuleMain.h"
@@ -19,6 +20,10 @@ extern CallbackManagerInterface* callbackManagerInterfacePtr;
 extern HoloCureMenuInterface* holoCureMenuInterfacePtr;
 extern std::unordered_map<std::string, characterDataStruct> characterDataMap;
 
+void handleNodeEditor(nodeEditor& curNodeEditor);
+
+ax::NodeEditor::PinId prevLinkPinId = 0;
+
 int spriteDequePage = 0;
 std::deque<std::shared_ptr<spriteData>> spriteDeque;
 
@@ -35,6 +40,7 @@ int projectileMenuIndex = -1;
 int curCharIdx = -1;
 int loadedCharIdx = -1;
 int curBuffDataIdx = -1;
+int curSoundDataIdx = -1;
 bool hasLoadedData = false;
 bool showBuffDataWindow = false;
 bool showIdleAnimationWindow = false;
@@ -44,8 +50,8 @@ bool showLargePortraitWindow = false;
 bool showSpecialAnimationWindow = false;
 bool showWeaponLevelsWindow = false;
 bool showSkillDataWindow = false;
-bool showActionDataWindow = false;
 bool showProjectileDataWindow = false;
+bool showSoundDataWindow = false;
 bool isAttackAnimationPlaying = false;
 bool isIdleAnimationPlaying = false;
 bool isRunAnimationPlaying = false;
@@ -68,6 +74,14 @@ int runAnimationHeight = 0;
 int runAnimationNumFrames = 0;
 double runAnimationCurFrame = 0;
 ID3D11ShaderResourceView* runAnimationTexture = NULL;
+
+int attackIconWidth = 0;
+int attackIconHeight = 0;
+ID3D11ShaderResourceView* attackIconTexture = NULL;
+
+int attackAwakenedIconWidth = 0;
+int attackAwakenedIconHeight = 0;
+ID3D11ShaderResourceView* attackAwakenedIconTexture = NULL;
 
 int buffIconWidth = 0;
 int buffIconHeight = 0;
@@ -93,9 +107,462 @@ ID3D11ShaderResourceView* specialIconTexture = NULL;
 
 std::vector<std::string> charList;
 std::vector<std::string> imageList;
+std::vector<std::string> soundList;
 characterData curCharData;
 
 std::shared_ptr<menuData> characterCreatorMenuLoadCharacter(new menuDataButton(60, 46 + 29 * 0, 180, 29, "CHARACTERCREATORMENU_LoadCharacter", "Load Character", true, loadCharacterClickButton, nullptr));
+
+nodeEditorNodePin::~nodeEditorNodePin()
+{
+	if (data != nullptr)
+	{
+		delete data;
+	}
+}
+
+nodeEditor::nodeEditor(const nodeEditor& otherNodeEditor) :
+	nextID(otherNodeEditor.nextID), isEditorOpen(otherNodeEditor.isEditorOpen), initEditorPos(otherNodeEditor.initEditorPos), editorContext(otherNodeEditor.editorContext),
+	nodeMap(otherNodeEditor.nodeMap), nodePinMap(otherNodeEditor.nodePinMap), nodeLinkMap(otherNodeEditor.nodeLinkMap)
+{
+	for (auto& curNodePair : nodeMap)
+	{
+		auto& curNode = curNodePair.second;
+		curNodePair.second.parentNodeEditor = this;
+		curNode.inputPinPtrArr.clear();
+		curNode.outputPinPtrArr.clear();
+		for (auto& inputPinID : curNode.inputPinIDArr)
+		{
+			curNode.inputPinPtrArr.push_back(&nodePinMap[inputPinID]);
+		}
+		for (auto& outputPinID : curNode.outputPinIDArr)
+		{
+			curNode.outputPinPtrArr.push_back(&nodePinMap[outputPinID]);
+		}
+	}
+	for (auto& curNodePinPair : nodePinMap)
+	{
+		curNodePinPair.second.parentNodePtr = &nodeMap[curNodePinPair.second.parentNodeID];
+		curNodePinPair.second.data = new pinVariableData();
+		for (auto& curNodeLink: curNodePinPair.second.nodeLinks)
+		{
+			nodeLinkMap[curNodeLink.linkID].startPinPtr = curNodeLink.startPinPtr = &nodePinMap[curNodeLink.startPinID];
+			nodeLinkMap[curNodeLink.linkID].endPinPtr = curNodeLink.endPinPtr = &nodePinMap[curNodeLink.endPinID];
+		}
+	}
+}
+
+nodeEditor& nodeEditor::operator=(const nodeEditor& otherNodeEditor)
+{
+	nextID = otherNodeEditor.nextID;
+	isEditorOpen = otherNodeEditor.isEditorOpen;
+	initEditorPos = otherNodeEditor.initEditorPos;
+	editorContext = otherNodeEditor.editorContext;
+	nodeMap = otherNodeEditor.nodeMap;
+	nodePinMap = otherNodeEditor.nodePinMap;
+	nodeLinkMap = otherNodeEditor.nodeLinkMap;
+	for (auto& curNodePair : nodeMap)
+	{
+		auto& curNode = curNodePair.second;
+		curNodePair.second.parentNodeEditor = this;
+		curNode.inputPinPtrArr.clear();
+		curNode.outputPinPtrArr.clear();
+		for (auto& inputPinID : curNode.inputPinIDArr)
+		{
+			curNode.inputPinPtrArr.push_back(&nodePinMap[inputPinID]);
+		}
+		for (auto& outputPinID : curNode.outputPinIDArr)
+		{
+			curNode.outputPinPtrArr.push_back(&nodePinMap[outputPinID]);
+		}
+	}
+	for (auto& curNodePinPair : nodePinMap)
+	{
+		curNodePinPair.second.parentNodePtr = &nodeMap[curNodePinPair.second.parentNodeID];
+		curNodePinPair.second.data = new pinVariableData();
+		for (auto& curNodeLink : curNodePinPair.second.nodeLinks)
+		{
+			nodeLinkMap[curNodeLink.linkID].startPinPtr = curNodeLink.startPinPtr = &nodePinMap[curNodeLink.startPinID];
+			nodeLinkMap[curNodeLink.linkID].endPinPtr = curNodeLink.endPinPtr = &nodePinMap[curNodeLink.endPinID];
+		}
+	}
+	return *this;
+}
+
+static std::string pinTypeToString(nodeEditorPinTypeEnum pinType)
+{
+	switch (pinType)
+	{
+		case nodeEditorPinType_None:
+		{
+			return "None";
+		}
+		case nodeEditorPinType_CodeFlow:
+		{
+			return "Code";
+		}
+		case nodeEditorPinType_ProjectileData:
+		{
+			return "Projectile";
+		}
+		case nodeEditorPinType_Number:
+		{
+			return "Number";
+		}
+		case nodeEditorPinType_Instance:
+		{
+			return "Instance";
+		}
+		case nodeEditorPinType_VariableName:
+		{
+			return "VarName";
+		}
+		case nodeEditorPinType_Boolean:
+		{
+			return "Boolean";
+		}
+		case nodeEditorPinType_String:
+		{
+			return "String";
+		}
+		case nodeEditorPinType_Integer:
+		{
+			return "Integer";
+		}
+		case nodeEditorPinType_RValue:
+		{
+			return "RValue";
+		}
+		case nodeEditorPinType_BuffData:
+		{
+			return "Buff";
+		}
+		case nodeEditorPinType_DSList:
+		{
+			return "DS List";
+		}
+		case nodeEditorPinType_DSMap:
+		{
+			return "DS Map";
+		}
+		case nodeEditorPinType_Array:
+		{
+			return "Array";
+		}
+		case nodeEditorPinType_SoundData:
+		{
+			return "Sound";
+		}
+		case nodeEditorPinType_FlushCache:
+		{
+			return "Flush Cache";
+		}
+		default:
+		{
+			return "Undefined";
+		}
+	}
+}
+
+void nodeEditorNode::setPinSpacing()
+{
+	switch (nodeType)
+	{
+		case nodeEditorNodeType_OnCreateProjectile:
+		case nodeEditorNodeType_OnDestroyProjectile:
+		case nodeEditorNodeType_InitVariable:
+		case nodeEditorNodeType_GetVariable:
+		case nodeEditorNodeType_SetVariable:
+		case nodeEditorNodeType_If:
+		case nodeEditorNodeType_Compare:
+		case nodeEditorNodeType_While:
+		case nodeEditorNodeType_MergeCodeFlow:
+		case nodeEditorNodeType_And:
+		case nodeEditorNodeType_Or:
+		case nodeEditorNodeType_Not:
+		case nodeEditorNodeType_Print:
+		case nodeEditorNodeType_TypeCast:
+		case nodeEditorNodeType_AppendString:
+		case nodeEditorNodeType_IntegerCeiling:
+		case nodeEditorNodeType_IntegerFloor:
+		case nodeEditorNodeType_IntegerRound:
+		case nodeEditorNodeType_IntegerCompare:
+		case nodeEditorNodeType_GetStructVariable:
+		case nodeEditorNodeType_SetStructVariable:
+		case nodeEditorNodeType_OnFrameStep:
+		case nodeEditorNodeType_OnSkillApply:
+		case nodeEditorNodeType_IsRValueDefined:
+		case nodeEditorNodeType_CollisionCircleList:
+		case nodeEditorNodeType_DSListGet:
+		case nodeEditorNodeType_DSListSize:
+		case nodeEditorNodeType_DSMapGet:
+		case nodeEditorNodeType_DSMapKeysToArray:
+		case nodeEditorNodeType_ArrayGet:
+		case nodeEditorNodeType_ArrayLength:
+		case nodeEditorNodeType_Random:
+		case nodeEditorNodeType_IntegerRandom:
+		case nodeEditorNodeType_Modulus:
+		case nodeEditorNodeType_SquareRoot:
+		case nodeEditorNodeType_Logarithm:
+		case nodeEditorNodeType_TernaryOperator:
+		case nodeEditorNodeType_SetDebugLevel:
+		case nodeEditorNodeType_CacheVariable:
+		case nodeEditorNodeType_PlaySound:
+		case nodeEditorNodeType_ArrayPush:
+		case nodeEditorNodeType_DSListClear:
+		case nodeEditorNodeType_DSListDestroy:
+		{
+			pinSpacing = 100;
+			break;
+		}
+		case nodeEditorNodeType_PointDirection:
+		{
+			pinSpacing = 200;
+			break;
+		}
+		case nodeEditorNodeType_ProjectileData:
+		case nodeEditorNodeType_SpawnProjectile:
+		case nodeEditorNodeType_BuffData:
+		case nodeEditorNodeType_ApplyBuff:
+		{
+			pinSpacing = 300;
+			break;
+		}
+		case nodeEditorNodeType_Number:
+		case nodeEditorNodeType_ThisInstance:
+		case nodeEditorNodeType_GlobalInstance:
+		case nodeEditorNodeType_PlayerManagerInstance:
+		case nodeEditorNodeType_PlayerInstance:
+		case nodeEditorNodeType_Add:
+		case nodeEditorNodeType_Subtract:
+		case nodeEditorNodeType_Multiply:
+		case nodeEditorNodeType_Divide:
+		case nodeEditorNodeType_Delay:
+		case nodeEditorNodeType_Boolean:
+		case nodeEditorNodeType_String:
+		case nodeEditorNodeType_Integer:
+		case nodeEditorNodeType_IntegerAdd:
+		case nodeEditorNodeType_IntegerSubtract:
+		case nodeEditorNodeType_IntegerMultiply:
+		case nodeEditorNodeType_IntegerDivide:
+		case nodeEditorNodeType_AssetGetIndex:
+		case nodeEditorNodeType_Sine:
+		case nodeEditorNodeType_Cosine:
+		case nodeEditorNodeType_Tangent:
+		case nodeEditorNodeType_SoundData:
+		case nodeEditorNodeType_FlushCache:
+		case nodeEditorNodeType_MergeFlush:
+		case nodeEditorNodeType_ArrayCreate:
+		case nodeEditorNodeType_DSListCreate:
+		{
+			pinSpacing = 0;
+			break;
+		}
+		default:
+		{
+			callbackManagerInterfacePtr->LogToFile(MODNAME, "Unknown pin type %d", nodeType);
+			break;
+		}
+	}
+}
+
+void nodeEditorNode::setCanDelete()
+{
+	switch (nodeType)
+	{
+		case nodeEditorNodeType_OnCreateProjectile:
+		case nodeEditorNodeType_OnDestroyProjectile:
+		case nodeEditorNodeType_OnFrameStep:
+		case nodeEditorNodeType_OnSkillApply:
+		{
+			canDelete = false;
+			break;
+		}
+		default:
+		{
+			canDelete = true;
+		}
+	}
+}
+
+void nodeEditorNode::drawNode()
+{
+	// First time init node position if loading from save
+	if (abs(initPosX) < 1e10 && abs(initPosY) < 1e10)
+	{
+		ax::NodeEditor::SetNodePosition(nodeID, ImVec2(initPosX, initPosY));
+		initPosX = 1e20;
+		initPosY = 1e20;
+	}
+	// TODO: Make the pins look more like Unreal pins
+	ax::NodeEditor::BeginNode(nodeID);
+	ImGui::Text(nodeName.c_str());
+	size_t maxPins = max(inputPinIDArr.size(), outputPinIDArr.size());
+	for (int i = 0; i < maxPins; i++)
+	{
+		if (i < inputPinIDArr.size())
+		{
+			auto& inputPin = parentNodeEditor->nodePinMap[inputPinIDArr[i]];
+			if (inputPin.pinType == nodeEditorPinType_VariableName)
+			{
+				ImGui::PushID(inputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(inputPin.pinVariableDataName.c_str()))
+				{
+					inputPin.variableDataMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+			}
+			else if (inputPin.pinType == nodeEditorPinType_Compare)
+			{
+				ImGui::PushID(inputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(inputPin.pinCompareDataName.c_str()))
+				{
+					inputPin.variableCompareMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+			}
+			else if (inputPin.pinType == nodeEditorPinType_VariableType)
+			{
+				ImGui::PushID(inputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(inputPin.pinVariableTypeName.c_str()))
+				{
+					inputPin.variableTypeMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+			}
+			else if (inputPin.pinType != nodeEditorPinType_None)
+			{
+				ax::NodeEditor::BeginPin(inputPinIDArr[i], ax::NodeEditor::PinKind::Input);
+				ImGui::Text("->");
+				ax::NodeEditor::EndPin();
+				ImGui::SameLine();
+				ImGui::Text(std::format("({}) {}", pinTypeToString(parentNodeEditor->nodePinMap[inputPinIDArr[i]].pinType), parentNodeEditor->nodePinMap[inputPinIDArr[i]].pinName).c_str());
+			}
+			else
+			{
+				ImGui::Text(" ");
+			}
+		}
+		else
+		{
+			ImGui::Text(" ");
+		}
+		ImGui::SameLine(pinSpacing);
+		if (i < outputPinIDArr.size())
+		{
+			auto& outputPin = parentNodeEditor->nodePinMap[outputPinIDArr[i]];
+			if (nodeType == nodeEditorNodeType_Number && outputPin.pinType == nodeEditorPinType_Number && !outputPin.isInput)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				ImGui::InputDouble("##PinNumberOutput", &outputPin.pinNumberVar);
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::SameLine();
+			}
+			else if (nodeType == nodeEditorNodeType_ProjectileData && outputPin.pinType == nodeEditorPinType_ProjectileData && !outputPin.isInput)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(outputPin.pinProjectileDataName.c_str()))
+				{
+					outputPin.projectileDataMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::SameLine();
+			}
+			else if (nodeType == nodeEditorNodeType_SoundData && outputPin.pinType == nodeEditorPinType_SoundData && !outputPin.isInput)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(outputPin.pinSoundDataName.c_str()))
+				{
+					outputPin.soundDataMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::SameLine();
+			}
+			else if (nodeType == nodeEditorNodeType_BuffData && outputPin.pinType == nodeEditorPinType_BuffData && !outputPin.isInput)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(outputPin.pinBuffDataName.c_str()))
+				{
+					outputPin.buffDataMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::SameLine();
+			}
+			else if (nodeType == nodeEditorNodeType_Boolean && outputPin.pinType == nodeEditorPinType_Boolean && !outputPin.isInput)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(outputPin.pinBooleanDataName.c_str()))
+				{
+					outputPin.variableBooleanMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::SameLine();
+			}
+			else if (nodeType == nodeEditorNodeType_String && outputPin.pinType == nodeEditorPinType_String && !outputPin.isInput)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				ImGui::InputText("##PinStringOutput", &outputPin.pinStringVar);
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::SameLine();
+			}
+			else if (nodeType == nodeEditorNodeType_Integer && outputPin.pinType == nodeEditorPinType_Integer && !outputPin.isInput)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				ImGui::InputInt("##PinIntegerOutput", &outputPin.pinIntegerVar);
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				ImGui::SameLine();
+			}
+			else if (outputPin.pinType == nodeEditorPinType_VariableType)
+			{
+				ImGui::PushID(outputPin.pinID);
+				ImGui::PushItemWidth(100.0f);
+				if (ImGui::Button(outputPin.pinVariableTypeName.c_str()))
+				{
+					outputPin.variableTypeMenuState = nodeEditorPinMenuState_Clicked;
+				}
+				ImGui::PopItemWidth();
+				ImGui::PopID();
+				continue;
+			}
+			if (outputPin.pinType != nodeEditorPinType_None)
+			{
+				ImGui::Text(std::format("{} ({})", parentNodeEditor->nodePinMap[outputPinIDArr[i]].pinName, pinTypeToString(parentNodeEditor->nodePinMap[outputPinIDArr[i]].pinType)).c_str());
+				ImGui::SameLine();
+				ax::NodeEditor::BeginPin(outputPin.pinID, ax::NodeEditor::PinKind::Output);
+				ImGui::Text("->");
+				ax::NodeEditor::EndPin();
+			}
+			else
+			{
+				ImGui::Text(" ");
+			}
+		}
+		else
+		{
+			ImGui::Text(" ");
+		}
+	}
+	ax::NodeEditor::EndNode();
+}
 
 menuGrid characterCreatorMenuGrid({
 	menuColumn({
@@ -113,7 +580,7 @@ bool loadCharacterData(std::string dirName, characterData& charData)
 	if (!std::filesystem::exists("CharacterCreatorMod/" + dirName))
 	{
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find the %s directory", dirName.c_str());
-		g_ModuleInterface->Print(CM_RED, "Couldn't find the %s directory", dirName.c_str());
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Couldn't find the %s directory", dirName.c_str());
 		return false;
 	}
 
@@ -123,17 +590,18 @@ bool loadCharacterData(std::string dirName, characterData& charData)
 	}
 
 	callbackManagerInterfacePtr->LogToFile(MODNAME, "Loading %s", dirName.c_str());
-	g_ModuleInterface->Print(CM_WHITE, "Loading %s", dirName.c_str());
+	DbgPrintEx(LOG_SEVERITY_INFO, "Loading %s", dirName.c_str());
 	std::ifstream inFile;
 	inFile.open("CharacterCreatorMod/" + dirName + "/charData.json");
 	try
 	{
 		nlohmann::json inputData = nlohmann::json::parse(inFile);
 		charData = inputData.template get<characterData>();
+		charData.charName = dirName.substr(5);
 	}
 	catch (nlohmann::json::parse_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Parse Error: %s when parsing %s", e.what(), dirName.c_str());
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Parse Error: %s when parsing %s", e.what(), dirName.c_str());
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Parse Error: %s when parsing %s", e.what(), dirName.c_str());
 	}
 	
@@ -190,6 +658,22 @@ void reloadImageData()
 			if (path.extension().string().compare(".png") == 0)
 			{
 				imageList.push_back(path.filename().string());
+			}
+		}
+	}
+}
+
+void reloadSoundData()
+{
+	soundList.clear();
+	if (std::filesystem::exists("CharacterCreatorMod/char_" + curCharData.charName))
+	{
+		for (const auto& dir : std::filesystem::directory_iterator("CharacterCreatorMod/char_" + curCharData.charName))
+		{
+			auto path = dir.path();
+			if (path.extension().string().compare(".ogg") == 0)
+			{
+				soundList.push_back(path.filename().string());
 			}
 		}
 	}
@@ -289,7 +773,6 @@ void handleBuffDataWindow()
 	{
 		buffData newBuffData;
 		newBuffData.buffName = "newBuff";
-		newBuffData.levels.push_back(buffLevelData());
 		curCharData.buffDataList.push_back(newBuffData);
 	}
 
@@ -324,19 +807,19 @@ void handleBuffDataWindow()
 		auto& curBuffData = curCharData.buffDataList[curBuffDataIdx];
 		ImGui::InputText("buffName", &curBuffData.buffName);
 
-		curBuffData.levels[0].DRMultiplier.isDefined |= ImGui::InputDouble("DR", &curBuffData.levels[0].DRMultiplier.value);
-		curBuffData.levels[0].attackIncrement.isDefined |= ImGui::InputInt("attackIncrement", &curBuffData.levels[0].attackIncrement.value);
-		curBuffData.levels[0].critIncrement.isDefined |= ImGui::InputInt("critIncrement", &curBuffData.levels[0].critIncrement.value);
-		curBuffData.levels[0].food.isDefined |= ImGui::InputDouble("food", &curBuffData.levels[0].food.value);
-		curBuffData.levels[0].hasteIncrement.isDefined |= ImGui::InputInt("hasteIncrement", &curBuffData.levels[0].hasteIncrement.value);
-		curBuffData.levels[0].healMultiplier.isDefined |= ImGui::InputDouble("healMultiplier", &curBuffData.levels[0].healMultiplier.value);
-		curBuffData.levels[0].maxStacks.isDefined |= ImGui::InputInt("maxStacks", &curBuffData.levels[0].maxStacks.value);
-		curBuffData.levels[0].speedIncrement.isDefined |= ImGui::InputInt("speedIncrement", &curBuffData.levels[0].speedIncrement.value);
-		curBuffData.levels[0].timer.isDefined |= ImGui::InputInt("timer", &curBuffData.levels[0].timer.value);
-		curBuffData.levels[0].weaponSize.isDefined |= ImGui::InputDouble("weaponSize", &curBuffData.levels[0].weaponSize.value);
-		curBuffData.levels[0].pickupRange.isDefined |= ImGui::InputDouble("pickupRange", &curBuffData.levels[0].pickupRange.value);
-		curBuffData.levels[0].critMod.isDefined |= ImGui::InputDouble("critDamage", &curBuffData.levels[0].critMod.value);
-		curBuffData.levels[0].bonusProjectile.isDefined |= ImGui::InputDouble("bonusProjectile", &curBuffData.levels[0].bonusProjectile.value);
+		curBuffData.data.DRMultiplier.isDefined |= ImGui::InputDouble("DR", &curBuffData.data.DRMultiplier.value);
+		curBuffData.data.attackIncrement.isDefined |= ImGui::InputInt("attackIncrement", &curBuffData.data.attackIncrement.value);
+		curBuffData.data.critIncrement.isDefined |= ImGui::InputInt("critIncrement", &curBuffData.data.critIncrement.value);
+		curBuffData.data.food.isDefined |= ImGui::InputDouble("food", &curBuffData.data.food.value);
+		curBuffData.data.hasteIncrement.isDefined |= ImGui::InputInt("hasteIncrement", &curBuffData.data.hasteIncrement.value);
+		curBuffData.data.healMultiplier.isDefined |= ImGui::InputDouble("healMultiplier", &curBuffData.data.healMultiplier.value);
+		curBuffData.data.maxStacks.isDefined |= ImGui::InputInt("maxStacks", &curBuffData.data.maxStacks.value);
+		curBuffData.data.speedIncrement.isDefined |= ImGui::InputInt("speedIncrement", &curBuffData.data.speedIncrement.value);
+		curBuffData.data.timer.isDefined |= ImGui::InputInt("timer", &curBuffData.data.timer.value);
+		curBuffData.data.weaponSize.isDefined |= ImGui::InputDouble("weaponSize", &curBuffData.data.weaponSize.value);
+		curBuffData.data.pickupRange.isDefined |= ImGui::InputDouble("pickupRange", &curBuffData.data.pickupRange.value);
+		curBuffData.data.critMod.isDefined |= ImGui::InputDouble("critDamage", &curBuffData.data.critMod.value);
+		curBuffData.data.bonusProjectile.isDefined |= ImGui::InputDouble("bonusProjectile", &curBuffData.data.bonusProjectile.value);
 		
 		addImageSelector("buffIcon", curBuffData.buffIconFileName, &buffIconTexture, buffIconWidth, buffIconHeight,
 			false, nullptr, nullptr, nullptr, nullptr);
@@ -508,157 +991,1146 @@ void handleSpecialAnimationWindow()
 		addImageSelector("specialAnimation", curCharData.specialAnimationFileName, &specialAnimationTexture, specialAnimationWidth, specialAnimationHeight,
 			true, &specialAnimationCurFrame, &specialAnimationNumFrames, &curCharData.specialAnimationFPS, &isSpecialAnimationPlaying);
 
-		handleProjectileOnTrigger(curCharData.specialProjectileActionList);
+		if (ImGui::Button("Toggle Special Editor Window"))
+		{
+			curCharData.specialAttackNodeEditor.isEditorOpen = !curCharData.specialAttackNodeEditor.isEditorOpen;
+			// Save all the node positions when closing the editor
+			if (!curCharData.specialAttackNodeEditor.isEditorOpen)
+			{
+				ax::NodeEditor::SetCurrentEditor(curCharData.specialAttackNodeEditor.editorContext);
+				for (auto& nodePair : curCharData.specialAttackNodeEditor.nodeMap)
+				{
+					auto& node = nodePair.second;
+					auto nodePos = ax::NodeEditor::GetNodePosition(node.nodeID);
+					node.initPosX = nodePos.x;
+					node.initPosY = nodePos.y;
+				}
+				ax::NodeEditor::SetCurrentEditor(nullptr);
+			}
+		}
+
+		if (curCharData.specialAttackNodeEditor.isEditorOpen)
+		{
+			ImGui::Begin(("Special Editor - " + curCharData.specialName + "##").c_str());
+			handleNodeEditor(curCharData.specialAttackNodeEditor);
+			ImGui::End();
+		}
 	}
 
 	ImGui::End();
 }
 
-void handleProjectileOnTrigger(std::vector<projectileActionData>& projectileActionList)
+void deleteNodeLink(nodeEditor& curNodeEditor, nodeEditorNodeLink& nodeLink)
 {
-	if (ImGui::Button("Add On Trigger"))
+	auto& startPin = curNodeEditor.nodePinMap[nodeLink.startPinID];
+	auto& endPin = curNodeEditor.nodePinMap[nodeLink.endPinID];
+	for (int i = 0; i < startPin.nodeLinks.size(); i++)
 	{
-		projectileActionData curProjectileActionData;
-		curProjectileActionData.projectileActionName = "newOnTrigger";
-		curProjectileActionData.projectileActionTriggerType = projectileActionTriggerType_NONE;
-		projectileActionList.push_back(curProjectileActionData);
-	}
-	for (int j = 0; j < projectileActionList.size(); j++)
-	{
-		auto& curProjectileActionData = projectileActionList[j];
-		if (ImGui::TreeNode((void*)(intptr_t)j, curProjectileActionData.projectileActionName.c_str()))
+		if (nodeLink.linkID == startPin.nodeLinks[i].linkID)
 		{
-			ImGui::InputText("projectileActionName", &curProjectileActionData.projectileActionName);
-			if (ImGui::BeginCombo("projectileActionTriggerType", projectileActionTriggerTypeMap[curProjectileActionData.projectileActionTriggerType].c_str()))
-			{
-				for (const auto& [key, value] : projectileActionTriggerTypeMap)
-				{
-					bool isSelectable = key == curProjectileActionData.projectileActionTriggerType;
-					if (ImGui::Selectable(value.c_str(), isSelectable))
-					{
-						curProjectileActionData.projectileActionTriggerType = key;
-					}
-				}
-				ImGui::EndCombo();
-			}
+			startPin.nodeLinks.erase(startPin.nodeLinks.begin() + i);
+			break;
+		}
+	}
+	for (int i = 0; i < endPin.nodeLinks.size(); i++)
+	{
+		if (nodeLink.linkID == endPin.nodeLinks[i].linkID)
+		{
+			endPin.nodeLinks.erase(endPin.nodeLinks.begin() + i);
+			break;
+		}
+	}
+	curNodeEditor.nodeLinkMap.erase(nodeLink.linkID);
+}
 
-			if (curProjectileActionData.projectileActionTriggerType != projectileActionTriggerType_NONE)
+void handleNodeEditorCreate(nodeEditor& curNodeEditor)
+{
+	if (ax::NodeEditor::BeginCreate())
+	{
+		auto showLabel = [](const char* label, ImColor color)
 			{
-				if (ImGui::BeginCombo("triggeredActionName", curProjectileActionData.triggeredActionName.c_str()))
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetTextLineHeight());
+				auto size = ImGui::CalcTextSize(label);
+
+				auto padding = ImGui::GetStyle().FramePadding;
+				auto spacing = ImGui::GetStyle().ItemSpacing;
+
+				ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(spacing.x, -spacing.y));
+
+				auto rectMin = ImGui::GetCursorScreenPos() - padding;
+				auto rectMax = ImGui::GetCursorScreenPos() + size + padding;
+
+				auto drawList = ImGui::GetWindowDrawList();
+				drawList->AddRectFilled(rectMin, rectMax, color, size.y * 0.15f);
+				ImGui::TextUnformatted(label);
+			};
+		ax::NodeEditor::PinId startPinID = 0, endPinID = 0;
+		if (ax::NodeEditor::QueryNewLink(&startPinID, &endPinID))
+		{
+			if (curNodeEditor.nodePinMap.contains(static_cast<int>(startPinID.Get())) && curNodeEditor.nodePinMap.contains(static_cast<int>(endPinID.Get())))
+			{
+				auto& startPin = curNodeEditor.nodePinMap[static_cast<int>(startPinID.Get())];
+				auto& endPin = curNodeEditor.nodePinMap[static_cast<int>(endPinID.Get())];
+				if (startPin.pinType == endPin.pinType && startPin.isInput != endPin.isInput)
 				{
-					for (int k = 0; k < curCharData.actionDataList.size(); k++)
+					bool doesLinkExist = false;
+					for (auto& nodeLink : startPin.nodeLinks)
 					{
-						const bool is_selected = (curProjectileActionData.triggeredActionName.compare(curCharData.actionDataList[k].actionName) == 0);
-						if (ImGui::Selectable(curCharData.actionDataList[k].actionName.c_str(), is_selected))
+						if ((nodeLink.startPinID == static_cast<int>(startPinID.Get()) && nodeLink.endPinID == static_cast<int>(endPinID.Get())) ||
+							(nodeLink.startPinID == static_cast<int>(endPinID.Get()) && nodeLink.endPinID == static_cast<int>(startPinID.Get())))
 						{
-							curProjectileActionData.triggeredActionName = curCharData.actionDataList[k].actionName;
+							doesLinkExist = true;
+							break;
 						}
 					}
-					ImGui::EndCombo();
+					if (doesLinkExist || startPin.parentNodeID == endPin.parentNodeID)
+					{
+						//						printf("Rejecting link %d %d %d\n", doesLinkExist, startPin.parentNodeID, endPin.parentNodeID);
+						ax::NodeEditor::RejectNewItem(ImColor(255, 0, 0), 2.0f);
+					}
+					else
+					{
+						showLabel("+ Create Link", ImColor(32, 45, 32, 180));
+						if (ax::NodeEditor::AcceptNewItem(ImColor(128, 255, 128), 4.0f))
+						{
+							auto& inputPin = (startPin.isInput) ? startPin : endPin;
+							auto& outputPin = (startPin.isInput) ? endPin : startPin;
+							// Break off input pin links
+							for (auto& pinLink : inputPin.nodeLinks)
+							{
+								deleteNodeLink(curNodeEditor, pinLink);
+							}
+							// Break off the link for the output pin if it's a code flow pin
+							if (outputPin.pinType == nodeEditorPinType_CodeFlow)
+							{
+								for (auto& pinLink : outputPin.nodeLinks)
+								{
+									deleteNodeLink(curNodeEditor, pinLink);
+								}
+							}
+							auto nodeLink = nodeEditorNodeLink(curNodeEditor.nextID, static_cast<int>(startPinID.Get()), static_cast<int>(endPinID.Get()));
+							curNodeEditor.nodeLinkMap[nodeLink.linkID] = nodeLink;
+							startPin.nodeLinks.push_back(nodeLink);
+							endPin.nodeLinks.push_back(nodeLink);
+						}
+					}
+				}
+				else
+				{
+					ax::NodeEditor::RejectNewItem(ImColor(255, 0, 0), 2.0f);
 				}
 			}
+		}
 
-			if (ImGui::Button("Delete onTrigger"))
+		ax::NodeEditor::PinId pinId = 0;
+		if (ax::NodeEditor::QueryNewNode(&pinId))
+		{
+			auto nodePinPair = curNodeEditor.nodePinMap.find(static_cast<int>(pinId.Get()));
+			if (nodePinPair != curNodeEditor.nodePinMap.end())
 			{
-				projectileActionList.erase(projectileActionList.begin() + j);
-				j--;
+				showLabel("+ Create Node", ImColor(32, 45, 32, 180));
+
+				if (ax::NodeEditor::AcceptNewItem())
+				{
+					auto& nodePin = nodePinPair->second;
+					if (nodePin.isInput || !nodePin.isInput && nodePin.pinType == nodeEditorPinType_CodeFlow)
+					{
+						for (auto& pinLink : nodePin.nodeLinks)
+						{
+							deleteNodeLink(curNodeEditor, pinLink);
+						}
+					}
+					prevLinkPinId = pinId;
+					curNodeEditor.openPopupPosition = ax::NodeEditor::ScreenToCanvas(ImGui::GetMousePos());
+					ax::NodeEditor::Suspend();
+					ImGui::OpenPopup("Create New Node");
+					ax::NodeEditor::Resume();
+				}
 			}
-			ImGui::TreePop();
+		}
+	}
+	ax::NodeEditor::EndCreate();
+}
+
+void handleNodeEditorDelete(nodeEditor& curNodeEditor)
+{
+	if (ax::NodeEditor::BeginDelete())
+	{
+		ax::NodeEditor::LinkId deletedLinkId;
+		while (ax::NodeEditor::QueryDeletedLink(&deletedLinkId))
+		{
+			if (ax::NodeEditor::AcceptDeletedItem())
+			{
+				auto& nodeLink = curNodeEditor.nodeLinkMap[static_cast<int>(deletedLinkId.Get())];
+				deleteNodeLink(curNodeEditor, nodeLink);
+			}
+		}
+
+		ax::NodeEditor::NodeId deletedNodeId;
+		while (ax::NodeEditor::QueryDeletedNode(&deletedNodeId))
+		{
+			auto& node = curNodeEditor.nodeMap[static_cast<int>(deletedNodeId.Get())];
+			if (!node.canDelete)
+			{
+				ax::NodeEditor::RejectDeletedItem();
+				continue;
+			}
+			if (ax::NodeEditor::AcceptDeletedItem())
+			{
+				for (auto& inputPinID : node.inputPinIDArr)
+				{
+					auto& nodeLinks = curNodeEditor.nodePinMap[inputPinID].nodeLinks;
+					for (auto& nodeLink : nodeLinks)
+					{
+						deleteNodeLink(curNodeEditor, nodeLink);
+					}
+					curNodeEditor.nodePinMap.erase(inputPinID);
+				}
+				for (auto& outputPinID : node.outputPinIDArr)
+				{
+					auto& nodeLinks = curNodeEditor.nodePinMap[outputPinID].nodeLinks;
+					for (auto& nodeLink : nodeLinks)
+					{
+						deleteNodeLink(curNodeEditor, nodeLink);
+					}
+					curNodeEditor.nodePinMap.erase(outputPinID);
+				}
+				curNodeEditor.nodeMap.erase(static_cast<int>(deletedNodeId.Get()));
+			}
+		}
+	}
+	ax::NodeEditor::EndDelete();
+}
+
+void handleNodeEditorDropdown(nodeEditor& curNodeEditor)
+{
+	for (auto& curNodePair : curNodeEditor.nodeMap)
+	{
+		auto& curNode = curNodePair.second;
+		auto dropDownMenuButton = [](std::string menuName, nodeEditor& curNodeEditor, nodeEditorNodePin& resPin, nodeEditorPinMenuStateEnum& menuState, std::string& dataName, std::vector<std::pair<std::string, nodeEditorPinTypeEnum>> menuItemArr)
+			-> bool
+			{
+				bool hasPinUpdated = false;
+				if (menuState == nodeEditorPinMenuState_Clicked)
+				{
+					ImGui::OpenPopup(menuName.c_str());
+					menuState = nodeEditorPinMenuState_Open;
+				}
+				if (menuState == nodeEditorPinMenuState_Open)
+				{
+					if (!ImGui::IsPopupOpen(menuName.c_str()))
+					{
+						menuState = nodeEditorPinMenuState_Closed;
+					}
+					else if (ImGui::BeginPopup(menuName.c_str()))
+					{
+						for (auto& menuItemName : menuItemArr)
+						{
+							if (ImGui::MenuItem(menuItemName.first.c_str()))
+							{
+								dataName = menuItemName.first;
+								menuState = nodeEditorPinMenuState_Closed;
+								if (menuItemName.second != nodeEditorPinType_None)
+								{
+									// Change the output pin type if it's different
+									if (resPin.pinType != menuItemName.second)
+									{
+										resPin.pinType = menuItemName.second;
+										// Need to disconnect the previous link
+										for (auto& resPinLink : resPin.nodeLinks)
+										{
+											deleteNodeLink(curNodeEditor, resPinLink);
+										}
+										hasPinUpdated = true;
+									}
+								}
+							}
+						}
+						ImGui::EndPopup();
+					}
+				}
+				return hasPinUpdated;
+			};
+
+		if (curNode.nodeType == nodeEditorNodeType_ProjectileData)
+		{
+			std::vector<std::pair<std::string, nodeEditorPinTypeEnum>> projectileDataPairList(curCharData.projectileDataList.size());
+			int projectileDataNamePos = 0;
+			for (auto& curProjectileData : curCharData.projectileDataList)
+			{
+				projectileDataPairList[projectileDataNamePos] = std::make_pair(curProjectileData.data.projectileName, nodeEditorPinType_None);
+				projectileDataNamePos++;
+			}
+			auto& curPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			dropDownMenuButton("Projectile Data Menu##" + curPin.pinID, curNodeEditor, curPin, curPin.projectileDataMenuState, curPin.pinProjectileDataName, projectileDataPairList);
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_GetVariable || curNode.nodeType == nodeEditorNodeType_GetStructVariable)
+		{
+			// TODO: Probably should add some type checking. Show different variable menu based on the instance type?
+			auto& curPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[1]];
+			auto& outputPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			bool hasPinChanged = dropDownMenuButton("Variable Data Menu" + curPin.pinID, curNodeEditor, outputPin, curPin.variableDataMenuState, curPin.pinVariableDataName,
+				{
+					{"direction", nodeEditorPinType_Number},
+					{"creator", nodeEditorPinType_Instance},
+					{"x", nodeEditorPinType_Number},
+					{"y", nodeEditorPinType_Number},
+					{"Custom RValue", nodeEditorPinType_RValue},
+				});
+			if (hasPinChanged)
+			{
+				auto& rvalueNamePin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[2]];
+				if (outputPin.pinType == nodeEditorPinType_RValue)
+				{
+					rvalueNamePin.pinType = nodeEditorPinType_String;
+				}
+				else
+				{
+					rvalueNamePin.pinType = nodeEditorPinType_None;
+					// Need to disconnect the previous link
+					for (auto& pinLink : rvalueNamePin.nodeLinks)
+					{
+						deleteNodeLink(curNodeEditor, pinLink);
+					}
+				}
+			}
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_SetVariable || curNode.nodeType == nodeEditorNodeType_SetStructVariable)
+		{
+			// TODO: Probably should add some type checking. Show different variable menu based on the instance type?
+			auto& curPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[2]];
+			auto& inputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[3]];
+			bool hasPinChanged = dropDownMenuButton("Variable Data Menu" + curPin.pinID, curNodeEditor, inputPin, curPin.variableDataMenuState, curPin.pinVariableDataName,
+				{
+					{"direction", nodeEditorPinType_Number},
+					{"creator", nodeEditorPinType_Instance},
+					{"x", nodeEditorPinType_Number},
+					{"y", nodeEditorPinType_Number},
+					{"Custom RValue", nodeEditorPinType_RValue},
+				});
+			if (hasPinChanged)
+			{
+				auto& rvalueNamePin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[4]];
+				if (inputPin.pinType == nodeEditorPinType_RValue)
+				{
+					rvalueNamePin.pinType = nodeEditorPinType_String;
+				}
+				else
+				{
+					rvalueNamePin.pinType = nodeEditorPinType_None;
+					// Need to disconnect the previous link
+					for (auto& pinLink : rvalueNamePin.nodeLinks)
+					{
+						deleteNodeLink(curNodeEditor, pinLink);
+					}
+				}
+			}
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_Boolean)
+		{
+			auto& curPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			dropDownMenuButton("Boolean Menu" + curPin.pinID, curNodeEditor, curPin, curPin.variableBooleanMenuState, curPin.pinBooleanDataName,
+				{
+					{"True", nodeEditorPinType_Boolean},
+					{"False", nodeEditorPinType_Boolean},
+				});
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_Compare)
+		{
+			auto& curPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[2]];
+			auto& outputPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			dropDownMenuButton("Compare Menu" + curPin.pinID, curNodeEditor, outputPin, curPin.variableCompareMenuState, curPin.pinCompareDataName,
+				{
+					{"<", nodeEditorPinType_Boolean},
+					{"<=", nodeEditorPinType_Boolean},
+					{"==", nodeEditorPinType_Boolean},
+					{">", nodeEditorPinType_Boolean},
+					{">=", nodeEditorPinType_Boolean},
+					{"!=", nodeEditorPinType_Boolean},
+				});
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_IntegerCompare)
+		{
+			auto& curPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[2]];
+			auto& outputPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			dropDownMenuButton("Integer Compare Menu" + curPin.pinID, curNodeEditor, outputPin, curPin.variableCompareMenuState, curPin.pinCompareDataName,
+				{
+					{"<", nodeEditorPinType_Boolean},
+					{"<=", nodeEditorPinType_Boolean},
+					{"==", nodeEditorPinType_Boolean},
+					{">", nodeEditorPinType_Boolean},
+					{">=", nodeEditorPinType_Boolean},
+					{"!=", nodeEditorPinType_Boolean},
+				});
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_TypeCast)
+		{
+			auto& variableTypeInputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[0]];
+			auto& inputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[1]];
+
+			auto& variableTypeOutputPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			auto& outputPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[1]];
+			bool hasPinChanged = dropDownMenuButton("Type Cast Input Menu" + inputPin.pinID, curNodeEditor, inputPin, variableTypeInputPin.variableTypeMenuState, variableTypeInputPin.pinVariableTypeName,
+				{
+					{"Integer", nodeEditorPinType_Integer},
+					{"Boolean", nodeEditorPinType_Boolean},
+					{"Number", nodeEditorPinType_Number},
+					{"String", nodeEditorPinType_String},
+					{"RValue", nodeEditorPinType_RValue},
+					{"Instance", nodeEditorPinType_Instance},
+					{"Array", nodeEditorPinType_Array},
+					{"DS Map", nodeEditorPinType_DSMap},
+					{"DS List", nodeEditorPinType_DSList},
+				});
+			std::vector<std::pair<std::string, nodeEditorPinTypeEnum>> typeCastPairList;
+			if (inputPin.pinType == nodeEditorPinType_Integer)
+			{
+				typeCastPairList = {
+					{"String", nodeEditorPinType_String},
+					{"Number", nodeEditorPinType_Number},
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_Boolean)
+			{
+				typeCastPairList = {
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_Number)
+			{
+				typeCastPairList = {
+					{"String", nodeEditorPinType_String},
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_String)
+			{
+				typeCastPairList = {
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_RValue)
+			{
+				typeCastPairList = {
+					{"Integer", nodeEditorPinType_Integer},
+					{"Boolean", nodeEditorPinType_Boolean},
+					{"String", nodeEditorPinType_String},
+					{"Number", nodeEditorPinType_Number},
+					{"Instance", nodeEditorPinType_Instance},
+					{"Array", nodeEditorPinType_Array},
+					{"DS Map", nodeEditorPinType_DSMap},
+					{"DS List", nodeEditorPinType_DSList},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_Instance)
+			{
+				typeCastPairList = {
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_Array)
+			{
+				typeCastPairList = {
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_DSMap)
+			{
+				typeCastPairList = {
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			else if (inputPin.pinType == nodeEditorPinType_DSList)
+			{
+				typeCastPairList = {
+					{"RValue", nodeEditorPinType_RValue},
+				};
+			}
+			if (hasPinChanged)
+			{
+				outputPin.pinType = nodeEditorPinType_None;
+				variableTypeOutputPin.pinVariableTypeName = "";
+				for (auto& outputPinLink : outputPin.nodeLinks)
+				{
+					deleteNodeLink(curNodeEditor, outputPinLink);
+				}
+			}
+			dropDownMenuButton("Type Cast Output Menu" + outputPin.pinID, curNodeEditor, outputPin, variableTypeOutputPin.variableTypeMenuState, variableTypeOutputPin.pinVariableTypeName, typeCastPairList);
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_BuffData)
+		{
+			std::vector<std::pair<std::string, nodeEditorPinTypeEnum>> buffDataPairList(curCharData.buffDataList.size());
+			int buffDataNamePos = 0;
+			for (auto& curBuffData : curCharData.buffDataList)
+			{
+				buffDataPairList[buffDataNamePos] = std::make_pair(curBuffData.buffName, nodeEditorPinType_None);
+				buffDataNamePos++;
+			}
+			auto& curPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			dropDownMenuButton("Buff Data Menu" + curPin.pinID, curNodeEditor, curPin, curPin.buffDataMenuState, curPin.pinBuffDataName, buffDataPairList);
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_TernaryOperator)
+		{
+			auto& variableTypeInputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[0]];
+
+			auto& inputPinOne = curNodeEditor.nodePinMap[curNode.inputPinIDArr[2]];
+			auto& inputPinTwo = curNodeEditor.nodePinMap[curNode.inputPinIDArr[3]];
+			auto& outputPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			bool hasPinChanged = dropDownMenuButton("Ternary Operator Input Menu" + variableTypeInputPin.pinID, curNodeEditor, outputPin, variableTypeInputPin.variableTypeMenuState, variableTypeInputPin.pinVariableTypeName,
+				{
+					{"Integer", nodeEditorPinType_Integer},
+					{"Number", nodeEditorPinType_Number},
+					{"String", nodeEditorPinType_String},
+					{"RValue", nodeEditorPinType_RValue},
+					{"Instance", nodeEditorPinType_Instance},
+					{"DS List", nodeEditorPinType_DSList},
+					{"DS Map", nodeEditorPinType_DSMap},
+					{"Array", nodeEditorPinType_Array},
+				});
+			if (hasPinChanged)
+			{
+				inputPinOne.pinType = outputPin.pinType;
+				inputPinTwo.pinType = outputPin.pinType;
+				for (auto& pinLink : inputPinOne.nodeLinks)
+				{
+					deleteNodeLink(curNodeEditor, pinLink);
+				}
+				for (auto& pinLink : inputPinTwo.nodeLinks)
+				{
+					deleteNodeLink(curNodeEditor, pinLink);
+				}
+			}
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_CacheVariable)
+		{
+			auto& variableTypeInputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[0]];
+
+			auto& inputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[1]];
+			auto& outputPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			bool hasPinChanged = dropDownMenuButton("Cache Variable Menu" + variableTypeInputPin.pinID, curNodeEditor, outputPin, variableTypeInputPin.variableTypeMenuState, variableTypeInputPin.pinVariableTypeName,
+				{
+					{"Integer", nodeEditorPinType_Integer},
+					{"Number", nodeEditorPinType_Number},
+					{"String", nodeEditorPinType_String},
+					{"RValue", nodeEditorPinType_RValue},
+					{"Instance", nodeEditorPinType_Instance},
+					{"DS List", nodeEditorPinType_DSList},
+					{"DS Map", nodeEditorPinType_DSMap},
+					{"Array", nodeEditorPinType_Array},
+				});
+			if (hasPinChanged)
+			{
+				inputPin.pinType = outputPin.pinType;
+				for (auto& pinLink : inputPin.nodeLinks)
+				{
+					deleteNodeLink(curNodeEditor, pinLink);
+				}
+			}
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_SoundData)
+		{
+			std::vector<std::pair<std::string, nodeEditorPinTypeEnum>> soundDataPairList(curCharData.soundDataList.size());
+			int soundDataNamePos = 0;
+			for (auto& curSoundData : curCharData.soundDataList)
+			{
+				soundDataPairList[soundDataNamePos] = std::make_pair(curSoundData.soundName, nodeEditorPinType_None);
+				soundDataNamePos++;
+			}
+			auto& curPin = curNodeEditor.nodePinMap[curNode.outputPinIDArr[0]];
+			dropDownMenuButton("Sound Data Menu##" + curPin.pinID, curNodeEditor, curPin, curPin.soundDataMenuState, curPin.pinSoundDataName, soundDataPairList);
+		}
+		else if (curNode.nodeType == nodeEditorNodeType_ArrayPush)
+		{
+			auto& variableTypeInputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[2]];
+
+			auto& inputPin = curNodeEditor.nodePinMap[curNode.inputPinIDArr[3]];
+			bool hasPinChanged = dropDownMenuButton("Array Push Variable Menu" + variableTypeInputPin.pinID, curNodeEditor, inputPin, variableTypeInputPin.variableTypeMenuState, variableTypeInputPin.pinVariableTypeName,
+				{
+					{"Integer", nodeEditorPinType_Integer},
+					{"Number", nodeEditorPinType_Number},
+					{"String", nodeEditorPinType_String},
+					{"RValue", nodeEditorPinType_RValue},
+					{"Instance", nodeEditorPinType_Instance},
+				});
 		}
 	}
 }
 
-void handleSkillOnTrigger(std::vector<skillTriggerData>& skillTriggerList)
+void handleNodeEditor(nodeEditor& curNodeEditor)
 {
-	if (ImGui::Button("Add On Trigger"))
+	// Add node editor stuff here
+	ax::NodeEditor::SetCurrentEditor(curNodeEditor.editorContext);
+	ax::NodeEditor::Begin("My Editor");
+	// TODO: Not sure if I like this. Probably should try to fix the issue where a default pin is created and causes an invalid node to be created
+	std::erase_if(curNodeEditor.nodeMap, [](std::pair<const int, nodeEditorNode> curNodePair) { return curNodePair.second.nodeID == -1; });
+	for (auto& curActionNode : curNodeEditor.nodeMap)
 	{
-		skillTriggerData curSkillActionData;
-		curSkillActionData.skillTriggerName = "newOnTrigger";
-		curSkillActionData.skillTriggerType = skillTriggerType_NONE;
-		skillTriggerList.push_back(curSkillActionData);
+		curActionNode.second.drawNode();
 	}
-	for (int j = 0; j < skillTriggerList.size(); j++)
+
+	for (auto& nodeLinkPair : curNodeEditor.nodeLinkMap)
 	{
-		auto& curSkillTrigger = skillTriggerList[j];
-		if (ImGui::TreeNode((void*)(intptr_t)j, curSkillTrigger.skillTriggerName.c_str()))
+		auto& nodeLink = nodeLinkPair.second;
+		ax::NodeEditor::Link(nodeLink.linkID, nodeLink.startPinID, nodeLink.endPinID);
+	}
+
+	handleNodeEditorCreate(curNodeEditor);
+
+	handleNodeEditorDelete(curNodeEditor);
+
+	ax::NodeEditor::Suspend();
+
+	if (ax::NodeEditor::IsBackgroundDoubleClicked())
+	{
+		ImGui::OpenPopup("Create New Node");
+		curNodeEditor.openPopupPosition = ax::NodeEditor::ScreenToCanvas(ImGui::GetMousePos());
+		prevLinkPinId = 0;
+	}
+
+	// ImGui::SetNextWindowSizeConstraints ? Might be able to limit the size
+	if (ImGui::BeginPopup("Create New Node"))
+	{
+		auto linkPrevPin = [](nodeEditor& curNodeEditor, nodeEditorNode& curNode)
 		{
-			ImGui::InputText("skillTriggerName", &curSkillTrigger.skillTriggerName);
-			if (ImGui::BeginCombo("skillTriggerType", skillTriggerTypeMap[curSkillTrigger.skillTriggerType].c_str()))
+			if (prevLinkPinId.Get() != 0)
 			{
-				for (const auto& [key, value] : skillTriggerTypeMap)
+				auto& prevLinkPin = curNodeEditor.nodePinMap[static_cast<int>(prevLinkPinId.Get())];
+				auto& curNodePinIDArr = prevLinkPin.isInput ? curNode.outputPinIDArr : curNode.inputPinIDArr;
+				for (auto& curPinId : curNodePinIDArr)
 				{
-					bool isSelectable = key == curSkillTrigger.skillTriggerType;
-					if (ImGui::Selectable(value.c_str(), isSelectable))
+					auto& curPin = curNodeEditor.nodePinMap[curPinId];
+					if (curPin.pinType == prevLinkPin.pinType && curPin.isInput != prevLinkPin.isInput)
 					{
-						curSkillTrigger.skillTriggerType = key;
+						auto nodeLink = nodeEditorNodeLink(curNodeEditor.nextID, curPinId, prevLinkPin.pinID);
+						curNodeEditor.nodeLinkMap[nodeLink.linkID] = nodeLink;
+						curPin.nodeLinks.push_back(nodeLink);
+						prevLinkPin.nodeLinks.push_back(nodeLink);
+						break;
 					}
 				}
-				ImGui::EndCombo();
+				prevLinkPinId = 0;
 			}
-
-			if (curSkillTrigger.skillTriggerType != skillTriggerType_NONE)
-			{
-				if (ImGui::BeginCombo("triggeredActionName", curSkillTrigger.triggeredActionName.c_str()))
-				{
-					for (int k = 0; k < curCharData.actionDataList.size(); k++)
-					{
-						const bool is_selected = (curSkillTrigger.triggeredActionName.compare(curCharData.actionDataList[k].actionName) == 0);
-						if (ImGui::Selectable(curCharData.actionDataList[k].actionName.c_str(), is_selected))
-						{
-							curSkillTrigger.triggeredActionName = curCharData.actionDataList[k].actionName;
-						}
-					}
-					ImGui::EndCombo();
-				}
-			}
-
-			if (ImGui::Button("Delete onTrigger"))
-			{
-				skillTriggerList.erase(skillTriggerList.begin() + j);
-				j--;
-			}
-			ImGui::TreePop();
-		}
-	}
-}
-
-void handleNextActionList(std::vector<nextActionData>& nextActionList)
-{
-	if (ImGui::Button("Add Next Action"))
-	{
-		nextActionData curNextActionData;
-		curNextActionData.nextActionDataName = "newAction";
-		nextActionList.push_back(curNextActionData);
-	}
-	for (int j = 0; j < nextActionList.size(); j++)
-	{
-		auto& curNextAction = nextActionList[j];
-		if (ImGui::TreeNode((void*)(intptr_t)j, curNextAction.nextActionDataName.c_str()))
+		};
+		if (ImGui::MenuItem("Center to Nodes"))
 		{
-			ImGui::InputText("nextActionDataName", &curNextAction.nextActionDataName);
-			if (ImGui::BeginCombo("triggeredActionName", curNextAction.triggeredActionName.c_str()))
-			{
-				for (int k = 0; k < curCharData.actionDataList.size(); k++)
-				{
-					const bool is_selected = (curNextAction.triggeredActionName.compare(curCharData.actionDataList[k].actionName) == 0);
-					if (ImGui::Selectable(curCharData.actionDataList[k].actionName.c_str(), is_selected))
-					{
-						curNextAction.triggeredActionName = curCharData.actionDataList[k].actionName;
-					}
-				}
-				ImGui::EndCombo();
-			}
-
-			ImGui::InputInt("Frame delay", &curNextAction.actionFrameDelay);
-
-			if (ImGui::Button("Delete Next Action"))
-			{
-				nextActionList.erase(nextActionList.begin() + j);
-				j--;
-			}
-			ImGui::TreePop();
+			ax::NodeEditor::NavigateToContent();
 		}
+		if (ImGui::MenuItem("Spawn Projectile"))
+		{
+			nodeEditorNode curNode = nodeEditorSpawnProjectileNode(&curNodeEditor, curNodeEditor.nextID, "Spawn Projectile");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Number"))
+		{
+			nodeEditorNode curNode = nodeEditorNumberNode(&curNodeEditor, curNodeEditor.nextID, "Number");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Integer"))
+		{
+			nodeEditorNode curNode = nodeEditorIntegerNode(&curNodeEditor, curNodeEditor.nextID, "Integer");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Projectile Data"))
+		{
+			nodeEditorNode curNode = nodeEditorProjectileDataNode(&curNodeEditor, curNodeEditor.nextID, "Projectile Data");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("This Instance"))
+		{
+			nodeEditorNode curNode = nodeEditorThisInstanceNode(&curNodeEditor, curNodeEditor.nextID, "This Instance");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Global Instance"))
+		{
+			nodeEditorNode curNode = nodeEditorGlobalInstanceNode(&curNodeEditor, curNodeEditor.nextID, "Global Instance");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Player Manager Instance"))
+		{
+			nodeEditorNode curNode = nodeEditorPlayerManagerNode(&curNodeEditor, curNodeEditor.nextID, "Player Manager Instance");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Player Instance"))
+		{
+			nodeEditorNode curNode = nodeEditorPlayerNode(&curNodeEditor, curNodeEditor.nextID, "Player Instance");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Get Variable"))
+		{
+			nodeEditorNode curNode = nodeEditorGetVariableNode(&curNodeEditor, curNodeEditor.nextID, "Get Variable");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Set Variable"))
+		{
+			nodeEditorNode curNode = nodeEditorSetVariableNode(&curNodeEditor, curNodeEditor.nextID, "Set Variable");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Get Struct Variable"))
+		{
+			nodeEditorNode curNode = nodeEditorGetStructVariableNode(&curNodeEditor, curNodeEditor.nextID, "Get Struct Variable");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Set Struct Variable"))
+		{
+			nodeEditorNode curNode = nodeEditorSetStructVariableNode(&curNodeEditor, curNodeEditor.nextID, "Set Struct Variable");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::BeginMenu("Math"))
+		{
+			if (ImGui::MenuItem("Add"))
+			{
+				nodeEditorNode curNode = nodeEditorAddNode(&curNodeEditor, curNodeEditor.nextID, "Add");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Subtract"))
+			{
+				nodeEditorNode curNode = nodeEditorSubtractNode(&curNodeEditor, curNodeEditor.nextID, "Subtract");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Multiply"))
+			{
+				nodeEditorNode curNode = nodeEditorMultiplyNode(&curNodeEditor, curNodeEditor.nextID, "Multiply");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Divide"))
+			{
+				nodeEditorNode curNode = nodeEditorDivideNode(&curNodeEditor, curNodeEditor.nextID, "Divide");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Ceiling"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerCeilingNode(&curNodeEditor, curNodeEditor.nextID, "Integer Ceiling");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Floor"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerCeilingNode(&curNodeEditor, curNodeEditor.nextID, "Integer Floor");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Round"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerRoundNode(&curNodeEditor, curNodeEditor.nextID, "Integer Round");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Add"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerAddNode(&curNodeEditor, curNodeEditor.nextID, "Integer Add");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Subtract"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerSubtractNode(&curNodeEditor, curNodeEditor.nextID, "Integer Subtract");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Multiply"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerMultiplyNode(&curNodeEditor, curNodeEditor.nextID, "Integer Multiply");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Divide"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerDivideNode(&curNodeEditor, curNodeEditor.nextID, "Integer Divide");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Random"))
+			{
+				nodeEditorNode curNode = nodeEditorRandomNode(&curNodeEditor, curNodeEditor.nextID, "Random");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Random"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerRandomNode(&curNodeEditor, curNodeEditor.nextID, "Integer Random");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Modulus"))
+			{
+				nodeEditorNode curNode = nodeEditorModulusNode(&curNodeEditor, curNodeEditor.nextID, "Modulus");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Square Root"))
+			{
+				nodeEditorNode curNode = nodeEditorSquareRootNode(&curNodeEditor, curNodeEditor.nextID, "Square Root");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Logarithm"))
+			{
+				nodeEditorNode curNode = nodeEditorLogarithmNode(&curNodeEditor, curNodeEditor.nextID, "Logarithm");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Sine"))
+			{
+				nodeEditorNode curNode = nodeEditorSineNode(&curNodeEditor, curNodeEditor.nextID, "Sine");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Cosine"))
+			{
+				nodeEditorNode curNode = nodeEditorCosineNode(&curNodeEditor, curNodeEditor.nextID, "Cosine");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Tangent"))
+			{
+				nodeEditorNode curNode = nodeEditorTangentNode(&curNodeEditor, curNodeEditor.nextID, "Tangent");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Point Direction"))
+			{
+				nodeEditorNode curNode = nodeEditorPointDirectionNode(&curNodeEditor, curNodeEditor.nextID, "Point Direction");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			ImGui::EndMenu();
+		}
+		if (ImGui::MenuItem("Delay"))
+		{
+			nodeEditorNode curNode = nodeEditorDelayNode(&curNodeEditor, curNodeEditor.nextID, "Delay");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::BeginMenu("Boolean Functions"))
+		{
+			if (ImGui::MenuItem("Boolean"))
+			{
+				nodeEditorNode curNode = nodeEditorBooleanNode(&curNodeEditor, curNodeEditor.nextID, "Boolean");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("If"))
+			{
+				nodeEditorNode curNode = nodeEditorIfNode(&curNodeEditor, curNodeEditor.nextID, "If");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Compare"))
+			{
+				nodeEditorNode curNode = nodeEditorCompareNode(&curNodeEditor, curNodeEditor.nextID, "Compare");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Integer Compare"))
+			{
+				nodeEditorNode curNode = nodeEditorIntegerCompareNode(&curNodeEditor, curNodeEditor.nextID, "Integer Compare");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("While"))
+			{
+				nodeEditorNode curNode = nodeEditorWhileNode(&curNodeEditor, curNodeEditor.nextID, "While");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("And"))
+			{
+				nodeEditorNode curNode = nodeEditorAndNode(&curNodeEditor, curNodeEditor.nextID, "And");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Or"))
+			{
+				nodeEditorNode curNode = nodeEditorOrNode(&curNodeEditor, curNodeEditor.nextID, "Or");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Not"))
+			{
+				nodeEditorNode curNode = nodeEditorNotNode(&curNodeEditor, curNodeEditor.nextID, "Not");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Is RValue Defined"))
+			{
+				nodeEditorNode curNode = nodeEditorIsRValueDefinedNode(&curNodeEditor, curNodeEditor.nextID, "Is RValue Defined");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Ternary Operator"))
+			{
+				nodeEditorNode curNode = nodeEditorTernaryOperatorNode(&curNodeEditor, curNodeEditor.nextID, "Ternary Operator");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			ImGui::EndMenu();
+		}
+		if (ImGui::MenuItem("Merge Code Flow"))
+		{
+			nodeEditorNode curNode = nodeEditorMergeCodeFlowNode(&curNodeEditor, curNodeEditor.nextID, "Merge Code Flow");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("String"))
+		{
+			nodeEditorNode curNode = nodeEditorStringNode(&curNodeEditor, curNodeEditor.nextID, "String");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Print"))
+		{
+			nodeEditorNode curNode = nodeEditorPrintNode(&curNodeEditor, curNodeEditor.nextID, "Print");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Type Cast"))
+		{
+			nodeEditorNode curNode = nodeEditorTypeCastNode(&curNodeEditor, curNodeEditor.nextID, "Type Cast");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Append String"))
+		{
+			nodeEditorNode curNode = nodeEditorAppendStringNode(&curNodeEditor, curNodeEditor.nextID, "Append String");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Asset Get Index"))
+		{
+			nodeEditorNode curNode = nodeEditorAssetGetIndexNode(&curNodeEditor, curNodeEditor.nextID, "Asset Get Index");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Apply Buff"))
+		{
+			nodeEditorNode curNode = nodeEditorApplyBuffNode(&curNodeEditor, curNodeEditor.nextID, "Apply Buff");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Buff Data"))
+		{
+			nodeEditorNode curNode = nodeEditorBuffDataNode(&curNodeEditor, curNodeEditor.nextID, "Buff Data");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Collision Circle List"))
+		{
+			nodeEditorNode curNode = nodeEditorCollisionCircleListNode(&curNodeEditor, curNodeEditor.nextID, "Collision Circle List");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::BeginMenu("List Functions"))
+		{
+			if (ImGui::MenuItem("DS List Create"))
+			{
+				nodeEditorNode curNode = nodeEditorDSListCreateNode(&curNodeEditor, curNodeEditor.nextID, "DS List Create");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("DS List Get"))
+			{
+				nodeEditorNode curNode = nodeEditorDSListGetNode(&curNodeEditor, curNodeEditor.nextID, "DS List Get");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("DS List Size"))
+			{
+				nodeEditorNode curNode = nodeEditorDSListSizeNode(&curNodeEditor, curNodeEditor.nextID, "DS List Size");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("DS List Clear"))
+			{
+				nodeEditorNode curNode = nodeEditorDSListClearNode(&curNodeEditor, curNodeEditor.nextID, "DS List Clear");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("DS List Destroy"))
+			{
+				nodeEditorNode curNode = nodeEditorDSListDestroyNode(&curNodeEditor, curNodeEditor.nextID, "DS List Destroy");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			ImGui::EndMenu();
+		}
+		if (ImGui::MenuItem("DS Map Get"))
+		{
+			nodeEditorNode curNode = nodeEditorDSMapGetNode(&curNodeEditor, curNodeEditor.nextID, "DS Map Get");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("DS Map Keys To Array"))
+		{
+			nodeEditorNode curNode = nodeEditorDSMapKeysToArrayNode(&curNodeEditor, curNodeEditor.nextID, "DS Map Keys To Array");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::BeginMenu("Array Functions"))
+		{
+			if (ImGui::MenuItem("Array Create"))
+			{
+				nodeEditorNode curNode = nodeEditorArrayCreateNode(&curNodeEditor, curNodeEditor.nextID, "Array Create");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Array Get"))
+			{
+				nodeEditorNode curNode = nodeEditorArrayGetNode(&curNodeEditor, curNodeEditor.nextID, "Array Get");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Array Length"))
+			{
+				nodeEditorNode curNode = nodeEditorArrayLengthNode(&curNodeEditor, curNodeEditor.nextID, "Array Length");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Array Push"))
+			{
+				nodeEditorNode curNode = nodeEditorArrayPushNode(&curNodeEditor, curNodeEditor.nextID, "Array Push");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			ImGui::EndMenu();
+		}
+		if (ImGui::MenuItem("Set Debug Level"))
+		{
+			nodeEditorNode curNode = nodeEditorSetDebugLevelNode(&curNodeEditor, curNodeEditor.nextID, "Set Debug Level");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Sound Data"))
+		{
+			nodeEditorNode curNode = nodeEditorSoundDataNode(&curNodeEditor, curNodeEditor.nextID, "Sound Data");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::MenuItem("Play Sound"))
+		{
+			nodeEditorNode curNode = nodeEditorPlaySoundNode(&curNodeEditor, curNodeEditor.nextID, "Play Sound");
+			curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+			ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+			linkPrevPin(curNodeEditor, curNode);
+		}
+		if (ImGui::BeginMenu("Caching"))
+		{
+			if (ImGui::MenuItem("Cache Variable"))
+			{
+				nodeEditorNode curNode = nodeEditorCacheVariableNode(&curNodeEditor, curNodeEditor.nextID, "Cache Variable");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Flush Cache"))
+			{
+				nodeEditorNode curNode = nodeEditorFlushCacheNode(&curNodeEditor, curNodeEditor.nextID, "Flush Cache");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			if (ImGui::MenuItem("Merge Flush"))
+			{
+				nodeEditorNode curNode = nodeEditorMergeFlushNode(&curNodeEditor, curNodeEditor.nextID, "Merge Flush");
+				curNodeEditor.nodeMap[curNode.nodeID] = curNode;
+				ax::NodeEditor::SetNodePosition(curNode.nodeID, curNodeEditor.openPopupPosition);
+				linkPrevPin(curNodeEditor, curNode);
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::EndPopup();
 	}
+	handleNodeEditorDropdown(curNodeEditor);
+	ax::NodeEditor::Resume();
+
+	ax::NodeEditor::End();
+	if (!curNodeEditor.initEditorPos)
+	{
+		ax::NodeEditor::NavigateToContent();
+		curNodeEditor.initEditorPos = true;
+	}
+	ax::NodeEditor::SetCurrentEditor(nullptr);
 }
 
 void handleWeaponLevelsWindow()
@@ -690,6 +2162,14 @@ void handleWeaponLevelsWindow()
 		addImageSelector("attackAnimation", curCharData.attackAnimationFileName, &attackAnimationTexture, attackAnimationWidth, attackAnimationHeight,
 			true, &attackAnimationCurFrame, &attackAnimationNumFrames, &curCharData.attackAnimationFPS, &isAttackAnimationPlaying);
 
+		addImageSelector("attackIcon", curCharData.attackIconFileName, &attackIconTexture, attackIconWidth, attackIconHeight,
+			false, nullptr, nullptr, nullptr, nullptr);
+
+		addImageSelector("attackAwakenedIcon", curCharData.attackAwakenedIconFileName, &attackAwakenedIconTexture, attackAwakenedIconWidth, attackAwakenedIconHeight,
+			false, nullptr, nullptr, nullptr, nullptr);
+
+		ImGui::Checkbox("collides", &curCharData.attackCollides);
+
 		for (int i = 0; i < curCharData.weaponLevelDataList.size(); i++)
 		{
 			std::string strLevel = "Weapon Level " + std::to_string(i + 1);
@@ -708,10 +2188,33 @@ void handleWeaponLevelsWindow()
 				curWeaponLevelData.range.isDefined |= ImGui::InputInt(("range##" + strLevel).c_str(), &curWeaponLevelData.range.value);
 				curWeaponLevelData.speed.isDefined |= ImGui::InputDouble(("speed##" + strLevel).c_str(), &curWeaponLevelData.speed.value);
 
-				handleProjectileOnTrigger(curWeaponLevelData.projectileActionList);
-
 				ImGui::TreePop();
 			}
+		}
+
+		if (ImGui::Button("Toggle Weapon Editor Window"))
+		{
+			curCharData.mainWeaponNodeEditor.isEditorOpen = !curCharData.mainWeaponNodeEditor.isEditorOpen;
+			// Save all the node positions when closing the editor
+			if (!curCharData.mainWeaponNodeEditor.isEditorOpen)
+			{
+				ax::NodeEditor::SetCurrentEditor(curCharData.mainWeaponNodeEditor.editorContext);
+				for (auto& nodePair : curCharData.mainWeaponNodeEditor.nodeMap)
+				{
+					auto& node = nodePair.second;
+					auto nodePos = ax::NodeEditor::GetNodePosition(node.nodeID);
+					node.initPosX = nodePos.x;
+					node.initPosY = nodePos.y;
+				}
+				ax::NodeEditor::SetCurrentEditor(nullptr);
+			}
+		}
+
+		if (curCharData.mainWeaponNodeEditor.isEditorOpen)
+		{
+			ImGui::Begin(("Weapon Editor - " + curCharData.attackName + "##").c_str());
+			handleNodeEditor(curCharData.mainWeaponNodeEditor);
+			ImGui::End();
 		}
 	}
 
@@ -729,19 +2232,19 @@ void handleSkillDataWindow()
 		{
 			auto& curSkillData = curCharData.skillDataList[i];
 
-			ImGui::Checkbox("Use in game skill", &curSkillData.isUsingInGameSkill);
-			if (curSkillData.isUsingInGameSkill)
+			ImGui::Checkbox("Use in game skill", &curSkillData.data.isUsingInGameSkill);
+			if (curSkillData.data.isUsingInGameSkill)
 			{
-				if (ImGui::BeginCombo("Skill Name", curSkillData.inGameSkillName.c_str()))
+				if (ImGui::BeginCombo("Skill Name", curSkillData.data.inGameSkillName.c_str()))
 				{
 					for (const auto& [key, value] : characterDataMap)
 					{
 						for (int j = 0; j < 3; j++)
 						{
-							const bool is_selected = curSkillData.inGameSkillName.compare(value.perksStringArr[j]);
+							const bool is_selected = curSkillData.data.inGameSkillName.compare(value.perksStringArr[j]);
 							if (ImGui::Selectable(value.perksStringArr[j].c_str(), is_selected))
 							{
-								curSkillData.inGameSkillName = value.perksStringArr[j];
+								curSkillData.data.inGameSkillName = value.perksStringArr[j];
 							}
 						}
 					}
@@ -750,12 +2253,13 @@ void handleSkillDataWindow()
 			}
 			else
 			{
-				ImGui::InputText(("skillName##" + strLevel).c_str(), &curSkillData.skillName);
-				for (int j = 0; j < curSkillData.skillLevelDataList.size(); j++)
+				// TODO: Replace all of this with a node editor
+				ImGui::InputText(("skillName##" + strLevel).c_str(), &curSkillData.data.skillName);
+				for (int j = 0; j < curSkillData.data.skillLevelDataList.size(); j++)
 				{
 					if (ImGui::TreeNode(("Level " + std::to_string(j + 1) + "##" + strLevel).c_str()))
 					{
-						auto& curSkillLevel = curSkillData.skillLevelDataList[j];
+						auto& curSkillLevel = curSkillData.data.skillLevelDataList[j];
 						std::string skillLevel = "##" + strLevel + " Level " + std::to_string(j + 1);
 						curSkillLevel.DRMultiplier.isDefined |= ImGui::InputDouble(("DRMMultiplier" + skillLevel).c_str(), &curSkillLevel.DRMultiplier.value);
 						curSkillLevel.healMultiplier.isDefined |= ImGui::InputDouble(("healMultiplier" + skillLevel).c_str(), &curSkillLevel.healMultiplier.value);
@@ -768,108 +2272,40 @@ void handleSkillDataWindow()
 						curSkillLevel.pickupRange.isDefined |= ImGui::InputDouble(("pickupRange" + skillLevel).c_str(), &curSkillLevel.pickupRange.value);
 						curSkillLevel.critMod.isDefined |= ImGui::InputDouble(("critDamage" + skillLevel).c_str(), &curSkillLevel.critMod.value);
 						curSkillLevel.bonusProjectile.isDefined |= ImGui::InputDouble(("bonusProjectile" + skillLevel).c_str(), &curSkillLevel.bonusProjectile.value);
-
-						handleSkillOnTrigger(curSkillLevel.skillTriggerList);
 						
 						ImGui::InputTextMultiline(("skillDescription" + skillLevel).c_str(), &curSkillLevel.skillDescription);
 						ImGui::TreePop();
 					}
 				}
 
-				auto& curSkillIconTextureData = curSkillData.skillIconTextureData;
-				addImageSelector("skillIcon", curSkillData.skillIconFileName, &curSkillIconTextureData.texture, curSkillIconTextureData.width, curSkillIconTextureData.height,
+				auto& curSkillIconTextureData = curSkillData.data.skillIconTextureData;
+				addImageSelector("skillIcon", curSkillData.data.skillIconFileName, &curSkillIconTextureData.texture, curSkillIconTextureData.width, curSkillIconTextureData.height,
 					false, nullptr, nullptr, nullptr, nullptr);
-			}
 
-			ImGui::TreePop();
-		}
-	}
-
-	ImGui::End();
-}
-
-void handleActionDataWindow()
-{
-	ImGui::Begin("Action Data");
-	
-	if (ImGui::Button("Add Action##action"))
-	{
-		actionData newActionData;
-		newActionData.actionName = "newAction";
-		newActionData.actionType = actionType_NONE;
-		curCharData.actionDataList.push_back(newActionData);
-	}
-
-	for (int i = 0; i < curCharData.actionDataList.size(); i++)
-	{
-		std::string strAppendActionNumber = "##action" + std::to_string(i);
-		if (ImGui::TreeNode((void*)(intptr_t)i, curCharData.actionDataList[i].actionName.c_str()))
-		{
-			ImGui::InputText(("actionName" + strAppendActionNumber).c_str(), &curCharData.actionDataList[i].actionName);
-			ImGui::SliderInt("probability", &curCharData.actionDataList[i].probability, 0, 100);
-			if (ImGui::BeginCombo(("actionType" + strAppendActionNumber).c_str(), actionTypeMap[curCharData.actionDataList[i].actionType].c_str()))
-			{
-				for (const auto& [key, value] : actionTypeMap)
+				if (ImGui::Button("Toggle Skill Editor Window"))
 				{
-					const bool is_selected = curCharData.actionDataList[i].actionType == key;
-					if (ImGui::Selectable(value.c_str(), is_selected))
+					curSkillData.nodeEditor.isEditorOpen = !curSkillData.nodeEditor.isEditorOpen;
+					// Save all the node positions when closing the editor
+					if (!curSkillData.nodeEditor.isEditorOpen)
 					{
-						curCharData.actionDataList[i].actionType = key;
-					}
-				}
-				ImGui::EndCombo();
-			}
-
-			if (curCharData.actionDataList[i].actionType == actionType_SpawnProjectile)
-			{
-				auto& curActionProjectileData = curCharData.actionDataList[i].actionProjectileData;
-				curActionProjectileData.relativeSpawnPosX.isDefined |= ImGui::InputDouble(("relativeSpawnPosX" + strAppendActionNumber).c_str(), &curActionProjectileData.relativeSpawnPosX.value);
-				curActionProjectileData.relativeSpawnPosY.isDefined |= ImGui::InputDouble(("relativeSpawnPosY" + strAppendActionNumber).c_str(), &curActionProjectileData.relativeSpawnPosY.value);
-				curActionProjectileData.spawnDir.isDefined |= ImGui::InputDouble(("spawnDir" + strAppendActionNumber).c_str(), &curActionProjectileData.spawnDir.value);
-				ImGui::Checkbox("Is Absolute Spawn Dir", &curActionProjectileData.isAbsoluteSpawnDir);
-				if (ImGui::BeginCombo(("projectileDataName" + strAppendActionNumber).c_str(), curActionProjectileData.projectileDataName.c_str()))
-				{
-					for (int k = 0; k < curCharData.projectileDataList.size(); k++)
-					{
-						const bool is_selected = (curActionProjectileData.projectileDataName.compare(curCharData.projectileDataList[k].projectileName) == 0);
-						if (ImGui::Selectable(curCharData.projectileDataList[k].projectileName.c_str(), is_selected))
+						ax::NodeEditor::SetCurrentEditor(curSkillData.nodeEditor.editorContext);
+						for (auto& nodePair : curSkillData.nodeEditor.nodeMap)
 						{
-							curActionProjectileData.projectileDataName = curCharData.projectileDataList[k].projectileName;
+							auto& node = nodePair.second;
+							auto nodePos = ax::NodeEditor::GetNodePosition(node.nodeID);
+							node.initPosX = nodePos.x;
+							node.initPosY = nodePos.y;
 						}
+						ax::NodeEditor::SetCurrentEditor(nullptr);
 					}
-					ImGui::EndCombo();
 				}
-			}
-			else if (curCharData.actionDataList[i].actionType == actionType_ApplyBuff)
-			{
-				auto& curActionBuffData = curCharData.actionDataList[i].actionBuffData;
-				if (ImGui::BeginCombo(("buffName" + strAppendActionNumber).c_str(), curActionBuffData.buffName.c_str()))
-				{
-					for (int k = 0; k < curCharData.buffDataList.size(); k++)
-					{
-						const bool is_selected = (curActionBuffData.buffName.compare(curCharData.buffDataList[k].buffName) == 0);
-						if (ImGui::Selectable(curCharData.buffDataList[k].buffName.c_str(), is_selected))
-						{
-							curActionBuffData.buffName = curCharData.buffDataList[k].buffName;
-						}
-					}
-					ImGui::EndCombo();
-				}
-			}
-			else if (curCharData.actionDataList[i].actionType == actionType_SetProjectileStats)
-			{
-				auto& curActionSetProjectileStatsData = curCharData.actionDataList[i].actionSetProjectileStatsData;
-				curActionSetProjectileStatsData.relativePosX.isDefined |= ImGui::InputDouble(("relativePosX" + strAppendActionNumber).c_str(), &curActionSetProjectileStatsData.relativePosX.value);
-				curActionSetProjectileStatsData.relativePosY.isDefined |= ImGui::InputDouble(("relativePosY" + strAppendActionNumber).c_str(), &curActionSetProjectileStatsData.relativePosY.value);
-				curActionSetProjectileStatsData.speed.isDefined |= ImGui::InputDouble(("speed" + strAppendActionNumber).c_str(), &curActionSetProjectileStatsData.speed.value);
-			}
 
-			handleNextActionList(curCharData.actionDataList[i].nextActionList);
-			
-			if (ImGui::Button(("Delete action" + strAppendActionNumber).c_str()))
-			{
-				curCharData.actionDataList.erase(curCharData.actionDataList.begin() + i);
-				i--;
+				if (curSkillData.nodeEditor.isEditorOpen)
+				{
+					ImGui::Begin(("Skill Editor - " + curSkillData.data.skillName + "##" + std::to_string(i)).c_str());
+					handleNodeEditor(curSkillData.nodeEditor);
+					ImGui::End();
+				}
 			}
 
 			ImGui::TreePop();
@@ -881,37 +2317,61 @@ void handleActionDataWindow()
 
 void handleProjectileWindow()
 {
-	// TODO: Add a way to modify the path of the projectile based on lifespan
-	// TODO: Maybe only have this modifiable through actions?
 	ImGui::Begin("Projectile Data");
 
 	if (ImGui::Button("Add projectile"))
 	{
-		projectileData newProjectileData;
-		newProjectileData.projectileName = "newProjectile";
+		projectileDataWrapper newProjectileData;
+		newProjectileData.data.projectileName = "newProjectile";
 		curCharData.projectileDataList.push_back(newProjectileData);
 	}
 
 	for (int i = 0; i < curCharData.projectileDataList.size(); i++)
 	{
 		std::string strAppendProjectileNumber = "##projectile" + std::to_string(i);
-		if (ImGui::TreeNode((void*)(intptr_t)i, curCharData.projectileDataList[i].projectileName.c_str()))
+		if (ImGui::TreeNode((void*)(intptr_t)i, curCharData.projectileDataList[i].data.projectileName.c_str()))
 		{
 			auto& curProjectileData = curCharData.projectileDataList[i];
-			ImGui::InputText(("projectileName" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileName);
-			curProjectileData.projectileDamage.isDefined |= ImGui::InputDouble(("projectileDamage" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileDamage.value);
-			curProjectileData.projectileDuration.isDefined |= ImGui::InputInt(("projectileDuration" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileDuration.value);
-			curProjectileData.projectileHitCD.isDefined |= ImGui::InputInt(("projectileHitCD" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileHitCD.value);
-			curProjectileData.projectileHitLimit.isDefined |= ImGui::InputInt(("projectileHitLimit" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileHitLimit.value);
-			curProjectileData.projectileHitRange.isDefined |= ImGui::InputInt(("projectileHitRange" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileHitRange.value);
-			curProjectileData.projectileSpeed.isDefined |= ImGui::InputDouble(("projectileSpeed" + strAppendProjectileNumber).c_str(), &curProjectileData.projectileSpeed.value);
-			
-			handleProjectileOnTrigger(curProjectileData.projectileActionList);
+			ImGui::InputText(("projectileName" + strAppendProjectileNumber).c_str(), &curProjectileData.data.projectileName);
+			curProjectileData.data.projectileDamage.isDefined |= ImGui::InputDouble(("projectileDamage" + strAppendProjectileNumber).c_str(), &curProjectileData.data.projectileDamage.value);
+			curProjectileData.data.projectileDuration.isDefined |= ImGui::InputInt(("projectileDuration" + strAppendProjectileNumber).c_str(), &curProjectileData.data.projectileDuration.value);
+			curProjectileData.data.projectileHitCD.isDefined |= ImGui::InputInt(("projectileHitCD" + strAppendProjectileNumber).c_str(), &curProjectileData.data.projectileHitCD.value);
+			curProjectileData.data.projectileHitLimit.isDefined |= ImGui::InputInt(("projectileHitLimit" + strAppendProjectileNumber).c_str(), &curProjectileData.data.projectileHitLimit.value);
+			curProjectileData.data.projectileHitRange.isDefined |= ImGui::InputInt(("projectileHitRange" + strAppendProjectileNumber).c_str(), &curProjectileData.data.projectileHitRange.value);
+			curProjectileData.data.projectileSpeed.isDefined |= ImGui::InputDouble(("projectileSpeed" + strAppendProjectileNumber).c_str(), &curProjectileData.data.projectileSpeed.value);
+			ImGui::Checkbox("collides", &curProjectileData.data.collides);
+			ImGui::Checkbox("isMain", &curProjectileData.data.isMain);
+
+			if (ImGui::Button("Toggle Projectile Editor Window"))
+			{
+				curProjectileData.showProjectileEditor = !curProjectileData.showProjectileEditor;
+				curProjectileData.nodeEditor.isEditorOpen = curProjectileData.showProjectileEditor;
+				// Save all the node positions when closing the editor
+				if (!curProjectileData.nodeEditor.isEditorOpen)
+				{
+					ax::NodeEditor::SetCurrentEditor(curProjectileData.nodeEditor.editorContext);
+					for (auto& nodePair : curProjectileData.nodeEditor.nodeMap)
+					{
+						auto& node = nodePair.second;
+						auto nodePos = ax::NodeEditor::GetNodePosition(node.nodeID);
+						node.initPosX = nodePos.x;
+						node.initPosY = nodePos.y;
+					}
+					ax::NodeEditor::SetCurrentEditor(nullptr);
+				}
+			}
+
+			if (curProjectileData.showProjectileEditor)
+			{
+				ImGui::Begin(("Action Editor - " + curProjectileData.data.projectileName + "##" + std::to_string(i)).c_str());
+				handleNodeEditor(curProjectileData.nodeEditor);
+				ImGui::End();
+			}
 
 			auto& curProjectileAnimationTextureData = curProjectileData.projectileAnimationTextureData;
 
-			addImageSelector("projectileAnimation", curProjectileData.projectileAnimationFileName, &curProjectileAnimationTextureData.texture, curProjectileAnimationTextureData.width, curProjectileAnimationTextureData.height,
-				true, &curProjectileAnimationTextureData.curFrame, &curProjectileAnimationTextureData.numFrames, &curProjectileData.projectileAnimationFPS, &curProjectileAnimationTextureData.isAnimationPlaying);
+			addImageSelector("projectileAnimation", curProjectileData.data.projectileAnimationFileName, &curProjectileAnimationTextureData.texture, curProjectileAnimationTextureData.width, curProjectileAnimationTextureData.height,
+				true, &curProjectileAnimationTextureData.curFrame, &curProjectileAnimationTextureData.numFrames, &curProjectileData.data.projectileAnimationFPS, &curProjectileAnimationTextureData.isAnimationPlaying);
 			if (ImGui::Button(("Delete projectile" + strAppendProjectileNumber).c_str()))
 			{
 				if (curProjectileAnimationTextureData.texture != NULL)
@@ -928,6 +2388,67 @@ void handleProjectileWindow()
 	ImGui::End();
 }
 
+void handleSoundDataWindow()
+{
+	ImGui::Begin("Sound Data");
+
+	if (ImGui::Button("Add Sound Data"))
+	{
+		soundData newSoundData;
+		newSoundData.soundName = "newSound";
+		curCharData.soundDataList.push_back(newSoundData);
+	}
+
+	const char* soundDataComboPreview = "";
+	if (curSoundDataIdx >= 0 && curSoundDataIdx < curCharData.soundDataList.size())
+	{
+		soundDataComboPreview = curCharData.soundDataList[curSoundDataIdx].soundName.c_str();
+	}
+
+	if (ImGui::BeginCombo("##SoundDataCombo", soundDataComboPreview))
+	{
+		for (int i = 0; i < curCharData.soundDataList.size(); i++)
+		{
+			if (ImGui::Selectable((curCharData.soundDataList[i].soundName + "##" + std::to_string(i)).c_str(), i == curSoundDataIdx))
+			{
+				curSoundDataIdx = i;
+				auto& curSoundData = curCharData.soundDataList[curSoundDataIdx];
+			}
+		}
+		ImGui::EndCombo();
+	}
+
+	if (curSoundDataIdx >= 0 && curSoundDataIdx < curCharData.soundDataList.size())
+	{
+		auto& curSoundData = curCharData.soundDataList[curSoundDataIdx];
+		ImGui::InputText("soundName", &curSoundData.soundName);
+
+		if (ImGui::BeginCombo(("soundFile##" + curSoundData.soundName + "Combo").c_str(), curSoundData.soundRValue.soundFile.c_str()))
+		{
+			bool hasSelected = false;
+			for (int i = 0; i < soundList.size(); i++)
+			{
+				if (ImGui::Selectable((soundList[i] + "##" + curSoundData.soundRValue.soundFile + std::to_string(i)).c_str(), curSoundData.soundRValue.soundFile.compare(imageList[i]) == 0))
+				{
+					curSoundData.soundRValue.soundFile = soundList[i];
+					hasSelected = true;
+				}
+			}
+
+			ImGui::EndCombo();
+		}
+
+
+		if (ImGui::Button("Delete Sound"))
+		{
+			curCharData.soundDataList.erase(curCharData.soundDataList.begin() + curSoundDataIdx);
+			curSoundDataIdx = -1;
+		}
+	}
+
+	ImGui::End();
+}
+
 void handleImGUI()
 {
 	ImGui::Begin("Character List");
@@ -937,7 +2458,7 @@ void handleImGUI()
 		if (!std::filesystem::exists("CharacterCreatorMod"))
 		{
 			callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find the CharacterCreatorMod directory");
-			g_ModuleInterface->Print(CM_RED, "Couldn't find the CharacterCreatorMod directory");
+			DbgPrintEx(LOG_SEVERITY_ERROR, "Couldn't find the CharacterCreatorMod directory");
 		}
 		else
 		{
@@ -971,6 +2492,7 @@ void handleImGUI()
 			loadedCharIdx = curCharIdx;
 			reloadImageData();
 			resetAttackAnimationData();
+			reloadSoundData();
 			bool ret = LoadTextureFromFile(("CharacterCreatorMod/char_" + curCharData.charName + "/" + curCharData.attackAnimationFileName).c_str(), &attackAnimationTexture, &attackAnimationWidth, &attackAnimationHeight);
 			IM_ASSERT(ret);
 			attackAnimationNumFrames = getSpriteNumFrames(curCharData.attackAnimationFileName);
@@ -1004,11 +2526,10 @@ void handleImGUI()
 					ImGui::TextColored(ImVec4(1, 0, 0, 1), "FAILED TO SAVE DATA");
 				}
 			}
-			ImGui::InputText("charName", &curCharData.charName);
 			curCharData.atk.isDefined |= ImGui::InputDouble("ATK", &curCharData.atk.value);
 			curCharData.crit.isDefined |= ImGui::InputDouble("CRIT", &curCharData.crit.value);
 			curCharData.hp.isDefined |= ImGui::InputDouble("HP", &curCharData.hp.value);
-			curCharData.spd.isDefined |= ImGui::InputDouble("SPD", &curCharData.hp.value);
+			curCharData.spd.isDefined |= ImGui::InputDouble("SPD", &curCharData.spd.value);
 			curCharData.sizeGrade.isDefined |= ImGui::SliderInt("sizeGrade", &curCharData.sizeGrade.value, 0, 4);
 			if (ImGui::BeginCombo("weaponType", curCharData.mainWeaponWeaponType.c_str()))
 			{
@@ -1055,13 +2576,17 @@ void handleImGUI()
 			{
 				showSkillDataWindow = !showSkillDataWindow;
 			}
-			if (ImGui::Button("Toggle Action Data Window"))
-			{
-				showActionDataWindow = !showActionDataWindow;
-			}
 			if (ImGui::Button("Toggle Projectile Data Window"))
 			{
 				showProjectileDataWindow = !showProjectileDataWindow;
+			}
+			if (ImGui::Button("Toggle Sound Data Window"))
+			{
+				showSoundDataWindow = !showSoundDataWindow;
+				if (showSoundDataWindow)
+				{
+					reloadSoundData();
+				}
 			}
 		}
 
@@ -1107,14 +2632,14 @@ void handleImGUI()
 			handleSkillDataWindow();
 		}
 
-		if (showActionDataWindow)
-		{
-			handleActionDataWindow();
-		}
-
 		if (showProjectileDataWindow)
 		{
 			handleProjectileWindow();
+		}
+
+		if (showSoundDataWindow)
+		{
+			handleSoundDataWindow();
 		}
 	}
 }
@@ -1124,7 +2649,7 @@ void reloadLoadCharacterDeque()
 	if (!std::filesystem::exists("CharacterCreatorMod"))
 	{
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't find the CharacterCreatorMod directory");
-		g_ModuleInterface->Print(CM_RED, "Couldn't find the CharacterCreatorMod directory");
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Couldn't find the CharacterCreatorMod directory");
 		return;
 	}
 	loadCharacterPage = 0;
@@ -1176,7 +2701,7 @@ void parseStringToJSONDouble(const std::string& inputStr, JSONDouble& outputJSON
 		if (!isSilent)
 		{
 			callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't parse %s as double", inputStr.c_str());
-			g_ModuleInterface->Print(CM_RED, "Couldn't parse %s as double", inputStr.c_str());
+			DbgPrintEx(LOG_SEVERITY_ERROR, "Couldn't parse %s as double", inputStr.c_str());
 		}
 		outputJSONDouble.isDefined = false;
 		return;
@@ -1192,7 +2717,7 @@ void parseStringToJSONInt(const std::string& inputStr, JSONInt& outputJSONInt, b
 		if (!isSilent)
 		{
 			callbackManagerInterfacePtr->LogToFile(MODNAME, "Couldn't parse %s as int", inputStr.c_str());
-			g_ModuleInterface->Print(CM_RED, "Couldn't parse %s as", inputStr.c_str());
+			DbgPrintEx(LOG_SEVERITY_ERROR, "Couldn't parse %s as", inputStr.c_str());
 		}
 		outputJSONInt.isDefined = false;
 		return;
@@ -1208,12 +2733,12 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::s
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to string", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to string", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to string", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to string", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to string", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to string", e.what(), varName);
 	}
 }
@@ -1226,12 +2751,12 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, JSONIn
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to JSONInt", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to JSONInt", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to JSONInt", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to JSONInt", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to JSONInt", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to JSONInt", e.what(), varName);
 	}
 }
@@ -1244,12 +2769,12 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, JSONDo
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to JSONDouble", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to JSONDouble", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to JSONDouble", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to JSONDouble", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to JSONDouble", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to JSONDouble", e.what(), varName);
 	}
 }
@@ -1262,30 +2787,30 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to weaponLevelData list", e.what(), varName);
 	}
 }
 
-void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<skillData>& outputSkillDataList)
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<skillDataWrapper>& outputSkillDataWrapperList)
 {
 	try
 	{
-		inputJson.at(varName).get_to(outputSkillDataList);
+		inputJson.at(varName).get_to(outputSkillDataWrapperList);
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to skillData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to skillData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to skillData list", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to skillData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to skillData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to skillData list", e.what(), varName);
 	}
 }
@@ -1298,12 +2823,12 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to buffData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to buffData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to buffData list", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to buffData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to buffData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to buffData list", e.what(), varName);
 	}
 }
@@ -1316,12 +2841,12 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to skillLevelData list", e.what(), varName);
 	}
 }
@@ -1334,12 +2859,12 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to buffLevelData list", e.what(), varName);
 	}
 }
@@ -1352,35 +2877,17 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to string list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to string list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to string list", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to string list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to string list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to string list", e.what(), varName);
 	}
 }
 
-void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<actionData>& outputActionDataList)
-{
-	try
-	{
-		inputJson.at(varName).get_to(outputActionDataList);
-	}
-	catch (nlohmann::json::type_error& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to actionData list", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to actionData list", e.what(), varName);
-	}
-	catch (nlohmann::json::out_of_range& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to actionData list", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to actionData list", e.what(), varName);
-	}
-}
-
-void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<projectileData>& outputProjectileDataList)
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<projectileDataWrapper>& outputProjectileDataList)
 {
 	try
 	{
@@ -1388,67 +2895,13 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::v
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to projectileData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to projectileData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to projectileData list", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to projectileData list", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to projectileData list", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to projectileData list", e.what(), varName);
-	}
-}
-
-void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, projectileActionTriggerTypeEnum& outputProjectileActionTriggerTypeEnum)
-{
-	try
-	{
-		std::string jsonString;
-		inputJson.at(varName).get_to(jsonString);
-		for (const auto& [key, value] : projectileActionTriggerTypeMap)
-		{
-			if (jsonString.compare(value) == 0)
-			{
-				outputProjectileActionTriggerTypeEnum = key;
-				break;
-			}
-		}
-	}
-	catch (nlohmann::json::type_error& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
-	}
-	catch (nlohmann::json::out_of_range& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to projectileActionTriggerTypeEnum", e.what(), varName);
-	}
-}
-
-void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, actionTypeEnum& outputActionTypeEnum)
-{
-	try
-	{
-		std::string jsonString;
-		inputJson.at(varName).get_to(jsonString);
-		for (const auto& [key, value] : actionTypeMap)
-		{
-			if (jsonString.compare(value) == 0)
-			{
-				outputActionTypeEnum = key;
-				break;
-			}
-		}
-	}
-	catch (nlohmann::json::type_error& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
-	}
-	catch (nlohmann::json::out_of_range& e)
-	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
-		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to actionTypeEnum", e.what(), varName);
 	}
 }
 
@@ -1469,20 +2922,73 @@ void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, skillT
 	}
 	catch (nlohmann::json::type_error& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Type Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
 	}
 	catch (nlohmann::json::out_of_range& e)
 	{
-		g_ModuleInterface->Print(CM_RED, "Out of Range Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
 		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to skillTriggerTypeEnum", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, int& outputInt)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputInt);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to int", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to int", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to int", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to int", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, bool& outputBool)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputBool);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to bool", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to bool", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to bool", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to bool", e.what(), varName);
+	}
+}
+
+void parseJSONToVar(const nlohmann::json& inputJson, const char* varName, std::vector<soundData>& outputSoundDataList)
+{
+	try
+	{
+		inputJson.at(varName).get_to(outputSoundDataList);
+	}
+	catch (nlohmann::json::type_error& e)
+	{
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Type Error: %s when parsing var %s to soundData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Type Error: %s when parsing var %s to soundData list", e.what(), varName);
+	}
+	catch (nlohmann::json::out_of_range& e)
+	{
+		DbgPrintEx(LOG_SEVERITY_ERROR, "Out of Range Error: %s when parsing var %s to soundData list", e.what(), varName);
+		callbackManagerInterfacePtr->LogToFile(MODNAME, "Out of Range Error: %s when parsing var %s to soundData list", e.what(), varName);
 	}
 }
 
 void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 {
 	outputJson = nlohmann::json{
-		{ "charName", inputCharData.charName },
 		{ "portraitFileName", inputCharData.portraitFileName },
 		{ "largePortraitFileName", inputCharData.largePortraitFileName },
 		{ "idleAnimationFPS", inputCharData.idleAnimationFPS },
@@ -1496,6 +3002,7 @@ void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 		{ "attackIconFileName", inputCharData.attackIconFileName },
 		{ "attackAwakenedIconFileName", inputCharData.attackAwakenedIconFileName },
 		{ "attackName", inputCharData.attackName },
+		{ "attackCollides", inputCharData.attackCollides },
 		{ "specialIconFileName", inputCharData.specialIconFileName },
 		{ "attackAnimationFPS", inputCharData.attackAnimationFPS },
 		{ "attackAnimationFileName", inputCharData.attackAnimationFileName },
@@ -1506,7 +3013,6 @@ void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 		{ "specialAnimationFileName", inputCharData.specialAnimationFileName },
 		{ "specialDamage", inputCharData.specialDamage },
 		{ "specialDuration", inputCharData.specialDuration },
-		{ "specialProjectileActionList", inputCharData.specialProjectileActionList },
 		{ "sizeGrade", inputCharData.sizeGrade },
 		{ "weaponType", inputCharData.mainWeaponWeaponType },
 		{ "isUsingInGameMainWeapon", inputCharData.isUsingInGameMainWeapon },
@@ -1524,14 +3030,15 @@ void to_json(nlohmann::json& outputJson, const characterData& inputCharData)
 		{ "levels", inputCharData.weaponLevelDataList },
 		{ "skills", inputCharData.skillDataList },
 		{ "buffs", inputCharData.buffDataList },
-		{ "actionDataList", inputCharData.actionDataList },
 		{ "projectileDataList", inputCharData.projectileDataList },
+		{ "soundDataList", inputCharData.soundDataList },
+		{ "mainWeaponNodeEditor", inputCharData.mainWeaponNodeEditor },
+		{ "specialAttackNodeEditor", inputCharData.specialAttackNodeEditor },
 	};
 }
 
 void from_json(const nlohmann::json& inputJson, characterData& outputCharData)
 {
-	parseJSONToVar(inputJson, "charName", outputCharData.charName);
 	parseJSONToVar(inputJson, "portraitFileName", outputCharData.portraitFileName);
 	parseJSONToVar(inputJson, "largePortraitFileName", outputCharData.largePortraitFileName);
 	parseJSONToVar(inputJson, "idleAnimationFPS", outputCharData.idleAnimationFPS);
@@ -1545,6 +3052,7 @@ void from_json(const nlohmann::json& inputJson, characterData& outputCharData)
 	parseJSONToVar(inputJson, "attackIconFileName", outputCharData.attackIconFileName);
 	parseJSONToVar(inputJson, "attackAwakenedIconFileName", outputCharData.attackAwakenedIconFileName);
 	parseJSONToVar(inputJson, "attackName", outputCharData.attackName);
+	parseJSONToVar(inputJson, "attackCollides", outputCharData.attackCollides);
 	parseJSONToVar(inputJson, "specialIconFileName", outputCharData.specialIconFileName);
 	parseJSONToVar(inputJson, "attackAnimationFPS", outputCharData.attackAnimationFPS);
 	parseJSONToVar(inputJson, "attackAnimationFileName", outputCharData.attackAnimationFileName);
@@ -1555,60 +3063,35 @@ void from_json(const nlohmann::json& inputJson, characterData& outputCharData)
 	parseJSONToVar(inputJson, "specialAnimationFileName", outputCharData.specialAnimationFileName);
 	parseJSONToVar(inputJson, "specialDamage", outputCharData.specialDamage);
 	parseJSONToVar(inputJson, "specialDuration", outputCharData.specialDuration);
+	/*
 	auto& specialProjectileActionList = inputJson["specialProjectileActionList"];
 	if (specialProjectileActionList.is_array())
 	{
 		outputCharData.specialProjectileActionList = specialProjectileActionList;
 	}
+	*/
 	parseJSONToVar(inputJson, "sizeGrade", outputCharData.sizeGrade);
 	parseJSONToVar(inputJson, "weaponType", outputCharData.mainWeaponWeaponType);
-	auto& isUsingInGameMainWeapon = inputJson["isUsingInGameMainWeapon"];
-	if (isUsingInGameMainWeapon.is_boolean())
-	{
-		outputCharData.isUsingInGameMainWeapon = isUsingInGameMainWeapon;
-	}
+	parseJSONToVar(inputJson, "isUsingInGameMainWeapon", outputCharData.isUsingInGameMainWeapon);
 	parseJSONToVar(inputJson, "inGameMainWeaponChar", outputCharData.inGameMainWeaponChar);
-
-	auto& isUsingInGameIdleSprite = inputJson["isUsingInGameIdleSprite"];
-	if (isUsingInGameIdleSprite.is_boolean())
-	{
-		outputCharData.isUsingInGameIdleSprite = isUsingInGameIdleSprite;
-	}
+	parseJSONToVar(inputJson, "isUsingInGameIdleSprite", outputCharData.isUsingInGameIdleSprite);
 	parseJSONToVar(inputJson, "inGameIdleSpriteChar", outputCharData.inGameIdleSpriteChar);
-
-	auto& isUsingInGameRunSprite = inputJson["isUsingInGameRunSprite"];
-	if (isUsingInGameRunSprite.is_boolean())
-	{
-		outputCharData.isUsingInGameRunSprite = isUsingInGameRunSprite;
-	}
+	parseJSONToVar(inputJson, "isUsingInGameRunSprite", outputCharData.isUsingInGameRunSprite);
 	parseJSONToVar(inputJson, "inGameRunSpriteChar", outputCharData.inGameRunSpriteChar);
-
-	auto& isUsingInGamePortraitSprite = inputJson["isUsingInGamePortraitSprite"];
-	if (isUsingInGamePortraitSprite.is_boolean())
-	{
-		outputCharData.isUsingInGamePortraitSprite = isUsingInGamePortraitSprite;
-	}
+	parseJSONToVar(inputJson, "isUsingInGamePortraitSprite", outputCharData.isUsingInGamePortraitSprite);
 	parseJSONToVar(inputJson, "inGamePortraitSpriteChar", outputCharData.inGamePortraitSpriteChar);
-
-	auto& isUsingInGameLargePortraitSprite = inputJson["isUsingInGameLargePortraitSprite"];
-	if (isUsingInGameLargePortraitSprite.is_boolean())
-	{
-		outputCharData.isUsingInGameLargePortraitSprite = isUsingInGameLargePortraitSprite;
-	}
+	parseJSONToVar(inputJson, "isUsingInGameLargePortraitSprite", outputCharData.isUsingInGameLargePortraitSprite);
 	parseJSONToVar(inputJson, "inGameLargePortraitSpriteChar", outputCharData.inGameLargePortraitSpriteChar);
-
-	auto& isUsingInGameSpecial = inputJson["isUsingInGameSpecial"];
-	if (isUsingInGameSpecial.is_boolean())
-	{
-		outputCharData.isUsingInGameSpecial = isUsingInGameSpecial;
-	}
+	parseJSONToVar(inputJson, "isUsingInGameSpecial", outputCharData.isUsingInGameSpecial);
 	parseJSONToVar(inputJson, "inGameSpecialChar", outputCharData.inGameSpecialChar);
 
 	parseJSONToVar(inputJson, "levels", outputCharData.weaponLevelDataList);
 	parseJSONToVar(inputJson, "skills", outputCharData.skillDataList);
 	parseJSONToVar(inputJson, "buffs", outputCharData.buffDataList);
-	parseJSONToVar(inputJson, "actionDataList", outputCharData.actionDataList);
 	parseJSONToVar(inputJson, "projectileDataList", outputCharData.projectileDataList);
+	parseJSONToVar(inputJson, "soundDataList", outputCharData.soundDataList);
+	from_json(inputJson["mainWeaponNodeEditor"], outputCharData.mainWeaponNodeEditor);
+	from_json(inputJson["specialAttackNodeEditor"], outputCharData.specialAttackNodeEditor);
 }
 
 void to_json(nlohmann::json& outputJson, const skillData& inputSkillData)
@@ -1635,6 +3118,18 @@ void from_json(const nlohmann::json& inputJson, skillData& outputSkillData)
 	parseJSONToVar(inputJson, "skillIconFileName", outputSkillData.skillIconFileName);
 }
 
+void to_json(nlohmann::json& outputJson, const skillDataWrapper& inputSkillDataWrapper)
+{
+	to_json(outputJson, inputSkillDataWrapper.data);
+	outputJson["nodeEditor"] = inputSkillDataWrapper.nodeEditor;
+}
+
+void from_json(const nlohmann::json& inputJson, skillDataWrapper& outputSkillDataWrapper)
+{
+	from_json(inputJson, outputSkillDataWrapper.data);
+	from_json(inputJson["nodeEditor"], outputSkillDataWrapper.nodeEditor);
+}
+
 void to_json(nlohmann::json& outputJson, const skillLevelData& inputSkillLevelData)
 {
 	outputJson = nlohmann::json{
@@ -1650,7 +3145,6 @@ void to_json(nlohmann::json& outputJson, const skillLevelData& inputSkillLevelDa
 		{ "pickupRange", inputSkillLevelData.pickupRange },
 		{ "critMod", inputSkillLevelData.critMod },
 		{ "bonusProjectile", inputSkillLevelData.bonusProjectile },
-		{ "skillTriggerList", inputSkillLevelData.skillTriggerList },
 	};
 }
 
@@ -1668,11 +3162,6 @@ void from_json(const nlohmann::json& inputJson, skillLevelData& outputSkillLevel
 	parseJSONToVar(inputJson, "pickupRange", outputSkillLevelData.pickupRange);
 	parseJSONToVar(inputJson, "critMod", outputSkillLevelData.critMod);
 	parseJSONToVar(inputJson, "bonusProjectile", outputSkillLevelData.bonusProjectile);
-	auto& skillTriggerList = inputJson["skillTriggerList"];
-	if (skillTriggerList.is_array())
-	{
-		from_json(skillTriggerList, outputSkillLevelData.skillTriggerList);
-	}
 }
 
 void to_json(nlohmann::json& outputJson, const weaponLevelData& inputWeaponLevelData)
@@ -1688,7 +3177,6 @@ void to_json(nlohmann::json& outputJson, const weaponLevelData& inputWeaponLevel
 		{ "hitLimit", inputWeaponLevelData.hitLimit },
 		{ "range", inputWeaponLevelData.range },
 		{ "speed", inputWeaponLevelData.speed },
-		{ "projectileActionList", inputWeaponLevelData.projectileActionList },
 	};
 }
 
@@ -1704,11 +3192,6 @@ void from_json(const nlohmann::json& inputJson, weaponLevelData& outputWeaponLev
 	parseJSONToVar(inputJson, "hitLimit", outputWeaponLevelData.hitLimit);
 	parseJSONToVar(inputJson, "range", outputWeaponLevelData.range);
 	parseJSONToVar(inputJson, "speed", outputWeaponLevelData.speed);
-	auto& projectileActionList = inputJson["projectileActionList"];
-	if (projectileActionList.is_array())
-	{
-		outputWeaponLevelData.projectileActionList = projectileActionList;
-	}
 }
 
 void to_json(nlohmann::json& outputJson, const buffLevelData& inputBuffLevelData)
@@ -1751,7 +3234,7 @@ void to_json(nlohmann::json& outputJson, const buffData& inputBuffData)
 {
 	outputJson = nlohmann::json{
 		{ "buffName", inputBuffData.buffName },
-		{ "levels", inputBuffData.levels },
+		{ "data", inputBuffData.data },
 		{ "buffIconFileName", inputBuffData.buffIconFileName },
 	};
 }
@@ -1759,24 +3242,22 @@ void to_json(nlohmann::json& outputJson, const buffData& inputBuffData)
 void from_json(const nlohmann::json& inputJson, buffData& outputBuffData)
 {
 	parseJSONToVar(inputJson, "buffName", outputBuffData.buffName);
-	parseJSONToVar(inputJson, "levels", outputBuffData.levels);
+	from_json(inputJson["data"], outputBuffData.data);
 	parseJSONToVar(inputJson, "buffIconFileName", outputBuffData.buffIconFileName);
 }
 
-void to_json(nlohmann::json& outputJson, const skillTriggerData& inputSkillTriggerData)
+void to_json(nlohmann::json& outputJson, const soundData& inputSoundData)
 {
 	outputJson = nlohmann::json{
-		{ "skillTriggerName", inputSkillTriggerData.skillTriggerName },
-		{ "skillTriggerType", skillTriggerTypeMap[inputSkillTriggerData.skillTriggerType] },
-		{ "triggeredActionName", inputSkillTriggerData.triggeredActionName },
+		{ "soundName", inputSoundData.soundName },
+		{ "soundFile", inputSoundData.soundRValue.soundFile },
 	};
 }
 
-void from_json(const nlohmann::json& inputJson, skillTriggerData& outputSkillTriggerData)
+void from_json(const nlohmann::json& inputJson, soundData& outputSoundData)
 {
-	parseJSONToVar(inputJson, "skillTriggerName", outputSkillTriggerData.skillTriggerName);
-	parseJSONToVar(inputJson, "skillTriggerType", outputSkillTriggerData.skillTriggerType);
-	parseJSONToVar(inputJson, "triggeredActionName", outputSkillTriggerData.triggeredActionName);
+	parseJSONToVar(inputJson, "soundName", outputSoundData.soundName);
+	parseJSONToVar(inputJson, "soundFile", outputSoundData.soundRValue.soundFile);
 }
 
 void to_json(nlohmann::json& outputJson, const JSONDouble& inputJSONDoubleData)
@@ -1829,166 +3310,6 @@ void from_json(const nlohmann::json& inputJson, JSONInt& outputJSONIntData)
 	}
 }
 
-void to_json(nlohmann::json& outputJson, const actionProjectile& inputActionProjectile)
-{
-	outputJson = nlohmann::json{
-		{ "relativeSpawnPosX", inputActionProjectile.relativeSpawnPosX },
-		{ "relativeSpawnPosY", inputActionProjectile.relativeSpawnPosY },
-		{ "spawnDir", inputActionProjectile.spawnDir },
-		{ "isAbsoluteSpawnDir", inputActionProjectile.isAbsoluteSpawnDir },
-		{ "projectileDataName", inputActionProjectile.projectileDataName },
-	};
-}
-
-void from_json(const nlohmann::json& inputJson, actionProjectile& outputActionProjectile)
-{
-	parseJSONToVar(inputJson, "relativeSpawnPosX", outputActionProjectile.relativeSpawnPosX);
-	parseJSONToVar(inputJson, "relativeSpawnPosY", outputActionProjectile.relativeSpawnPosY);
-	parseJSONToVar(inputJson, "spawnDir", outputActionProjectile.spawnDir);
-	auto& isAbsoluteSpawnDir = inputJson["isAbsoluteSpawnDir"];
-	if (isAbsoluteSpawnDir.is_boolean())
-	{
-		outputActionProjectile.isAbsoluteSpawnDir = isAbsoluteSpawnDir;
-	}
-	auto& projectileDataName = inputJson["projectileDataName"];
-	if (projectileDataName.is_string())
-	{
-		outputActionProjectile.projectileDataName = projectileDataName;
-	}
-}
-
-void to_json(nlohmann::json& outputJson, const actionBuff& inputActionBuff)
-{
-	outputJson = nlohmann::json{
-		{ "buffName", inputActionBuff.buffName },
-	};
-}
-
-void from_json(const nlohmann::json& inputJson, actionBuff& outputActionBuff)
-{
-	auto& buffName = inputJson["buffName"];
-	if (buffName.is_string())
-	{
-		outputActionBuff.buffName = buffName;
-	}
-}
-
-void to_json(nlohmann::json& outputJson, const actionSetProjectileStats& inputActionSetProjectileStats)
-{
-	outputJson = nlohmann::json{
-		{ "relativePosX", inputActionSetProjectileStats.relativePosX },
-		{ "relativePosY", inputActionSetProjectileStats.relativePosY },
-		{ "speed", inputActionSetProjectileStats.speed },
-	};
-}
-
-void from_json(const nlohmann::json& inputJson, actionSetProjectileStats& outputActionSetProjectileStats)
-{
-	parseJSONToVar(inputJson, "relativePosX", outputActionSetProjectileStats.relativePosX);
-	parseJSONToVar(inputJson, "relativePosY", outputActionSetProjectileStats.relativePosY);
-	parseJSONToVar(inputJson, "speed", outputActionSetProjectileStats.speed);
-}
-
-void to_json(nlohmann::json& outputJson, const nextActionData& inputNextActionData)
-{
-	outputJson = nlohmann::json{
-		{ "nextActionDataName", inputNextActionData.nextActionDataName },
-		{ "actionFrameDelay", inputNextActionData.actionFrameDelay },
-		{ "triggeredActionName", inputNextActionData.triggeredActionName },
-	};
-}
-
-void from_json(const nlohmann::json& inputJson, nextActionData& outputNextActionData)
-{
-	auto& nextActionDataName = inputJson["nextActionDataName"];
-	if (nextActionDataName.is_string())
-	{
-		outputNextActionData.nextActionDataName = nextActionDataName;
-	}
-	auto& actionFrameDelay = inputJson["actionFrameDelay"];
-	if (actionFrameDelay.is_number_integer())
-	{
-		outputNextActionData.actionFrameDelay = actionFrameDelay;
-	}
-	auto& triggeredActionName = inputJson["triggeredActionName"];
-	if (triggeredActionName.is_string())
-	{
-		outputNextActionData.triggeredActionName = triggeredActionName;
-	}
-}
-
-void to_json(nlohmann::json& outputJson, const actionData& inputActionData)
-{
-	outputJson = nlohmann::json{
-		{ "actionName", inputActionData.actionName },
-		{ "actionType", actionTypeMap[inputActionData.actionType] },
-		{ "probability", inputActionData.probability },
-		{ "nextActionList", inputActionData.nextActionList },
-	};
-	if (inputActionData.actionType == actionType_SpawnProjectile)
-	{
-		nlohmann::json tempJson;
-		to_json(tempJson, inputActionData.actionProjectileData);
-		outputJson["actionProjectileData"] = tempJson;
-	}
-	else if (inputActionData.actionType == actionType_ApplyBuff)
-	{
-		nlohmann::json tempJson;
-		to_json(tempJson, inputActionData.actionBuffData);
-		outputJson["actionBuffData"] = tempJson;
-	}
-	else if (inputActionData.actionType == actionType_SetProjectileStats)
-	{
-		nlohmann::json tempJson;
-		to_json(tempJson, inputActionData.actionSetProjectileStatsData);
-		outputJson["actionSetProjectileStatsData"] = tempJson;
-	}
-}
-
-void from_json(const nlohmann::json& inputJson, actionData& outputActionData)
-{
-	parseJSONToVar(inputJson, "actionName", outputActionData.actionName);
-	parseJSONToVar(inputJson, "actionType", outputActionData.actionType);
-	auto& probability = inputJson["probability"];
-	if (probability.is_number_integer())
-	{
-		outputActionData.probability = probability;
-	}
-	auto& nextActionList = inputJson["nextActionList"];
-	if (nextActionList.is_array())
-	{
-		from_json(nextActionList, outputActionData.nextActionList);
-	}
-	if (outputActionData.actionType == actionType_SpawnProjectile)
-	{
-		from_json(inputJson["actionProjectileData"], outputActionData.actionProjectileData);
-	}
-	else if (outputActionData.actionType == actionType_ApplyBuff)
-	{
-		from_json(inputJson["actionBuffData"], outputActionData.actionBuffData);
-	}
-	else if (outputActionData.actionType == actionType_SetProjectileStats)
-	{
-		from_json(inputJson["actionSetProjectileStatsData"], outputActionData.actionSetProjectileStatsData);
-	}
-}
-
-void to_json(nlohmann::json& outputJson, const projectileActionData& inputProjectileActionData)
-{
-	outputJson = nlohmann::json{
-		{ "projectileActionName", inputProjectileActionData.projectileActionName },
-		{ "projectileActionTriggerType", projectileActionTriggerTypeMap[inputProjectileActionData.projectileActionTriggerType] },
-		{ "triggeredActionName", inputProjectileActionData.triggeredActionName },
-	};
-}
-
-void from_json(const nlohmann::json& inputJson, projectileActionData& outputProjectileActionData)
-{
-	parseJSONToVar(inputJson, "projectileActionName", outputProjectileActionData.projectileActionName);
-	parseJSONToVar(inputJson, "projectileActionTriggerType", outputProjectileActionData.projectileActionTriggerType);
-	parseJSONToVar(inputJson, "triggeredActionName", outputProjectileActionData.triggeredActionName);
-}
-
 void to_json(nlohmann::json& outputJson, const projectileData& inputProjectileData)
 {
 	outputJson = nlohmann::json{
@@ -2001,7 +3322,8 @@ void to_json(nlohmann::json& outputJson, const projectileData& inputProjectileDa
 		{ "projectileHitLimit", inputProjectileData.projectileHitLimit },
 		{ "projectileHitRange", inputProjectileData.projectileHitRange },
 		{ "projectileSpeed", inputProjectileData.projectileSpeed },
-		{ "projectileActionList", inputProjectileData.projectileActionList },
+		{ "collides", inputProjectileData.collides },
+		{ "isMain", inputProjectileData.isMain },
 	};
 }
 
@@ -2016,9 +3338,326 @@ void from_json(const nlohmann::json& inputJson, projectileData& outputProjectile
 	parseJSONToVar(inputJson, "projectileHitLimit", outputProjectileData.projectileHitLimit);
 	parseJSONToVar(inputJson, "projectileHitRange", outputProjectileData.projectileHitRange);
 	parseJSONToVar(inputJson, "projectileSpeed", outputProjectileData.projectileSpeed);
-	auto& projectileActionList = inputJson["projectileActionList"];
-	if (projectileActionList.is_array())
+	parseJSONToVar(inputJson, "collides", outputProjectileData.collides);
+	parseJSONToVar(inputJson, "isMain", outputProjectileData.isMain);
+}
+
+void to_json(nlohmann::json& outputJson, const projectileDataWrapper& inputProjectileDataWrapper)
+{
+	to_json(outputJson, inputProjectileDataWrapper.data);
+	outputJson["nodeEditor"] = inputProjectileDataWrapper.nodeEditor;
+}
+
+void from_json(const nlohmann::json& inputJson, projectileDataWrapper& outputProjectileDataWrapper)
+{
+	from_json(inputJson, outputProjectileDataWrapper.data);
+	from_json(inputJson["nodeEditor"], outputProjectileDataWrapper.nodeEditor);
+}
+
+void to_json(nlohmann::json& outputJson, const nodeEditor& inputNodeEditor)
+{
+	outputJson = nlohmann::json{
+		{ "nextID", inputNodeEditor.nextID },
+		{ "nodeMap", inputNodeEditor.nodeMap },
+		{ "nodePinMap", inputNodeEditor.nodePinMap },
+		{ "nodeLinkMap", inputNodeEditor.nodeLinkMap },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, nodeEditor& outputNodeEditor)
+{
+	if (inputJson.is_null())
 	{
-		outputProjectileData.projectileActionList = projectileActionList;
+		return;
+	}
+	outputNodeEditor.nextID = inputJson["nextID"];
+	outputNodeEditor.nodeMap = inputJson["nodeMap"];
+	outputNodeEditor.nodePinMap = inputJson["nodePinMap"];
+	outputNodeEditor.nodeLinkMap = inputJson["nodeLinkMap"];
+}
+
+void to_json(nlohmann::json& outputJson, const nodeEditorNodeLink& inputNodeLink)
+{
+	outputJson = nlohmann::json{
+		{ "linkID", inputNodeLink.linkID },
+		{ "startPinID", inputNodeLink.startPinID },
+		{ "endPinID", inputNodeLink.endPinID },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, nodeEditorNodeLink& outputNodeLink)
+{
+	if (inputJson.is_null())
+	{
+		return;
+	}
+	parseJSONToVar(inputJson, "linkID", outputNodeLink.linkID);
+	outputNodeLink.startPinID = inputJson["startPinID"];
+	outputNodeLink.endPinID = inputJson["endPinID"];
+}
+
+void to_json(nlohmann::json& outputJson, const nodeEditorNodePin& inputNodePin)
+{
+	outputJson = nlohmann::json{
+		{ "parentNodeID", inputNodePin.parentNodeID },
+		{ "pinID", inputNodePin.pinID },
+		{ "pinName", inputNodePin.pinName },
+		{ "pinType", inputNodePin.pinType },
+		{ "nodeLinks", inputNodePin.nodeLinks },
+		{ "isInput", inputNodePin.isInput },
+	};
+	switch (inputNodePin.pinType)
+	{
+		case nodeEditorPinType_Number:
+		{
+			if (!inputNodePin.isInput)
+			{
+				outputJson["pinNumberVar"] = inputNodePin.pinNumberVar;
+			}
+			break;
+		}
+		case nodeEditorPinType_ProjectileData:
+		{
+			if (!inputNodePin.isInput)
+			{
+				outputJson["pinProjectileDataName"] = inputNodePin.pinProjectileDataName;
+			}
+			break;
+		}
+		case nodeEditorPinType_BuffData:
+		{
+			if (!inputNodePin.isInput)
+			{
+				outputJson["pinBuffDataName"] = inputNodePin.pinBuffDataName;
+			}
+			break;
+		}
+		case nodeEditorPinType_SoundData:
+		{
+			if (!inputNodePin.isInput)
+			{
+				outputJson["pinSoundDataName"] = inputNodePin.pinSoundDataName;
+			}
+			break;
+		}
+		case nodeEditorPinType_VariableName:
+		{
+			outputJson["pinVariableDataName"] = inputNodePin.pinVariableDataName;
+			break;
+		}
+		case nodeEditorPinType_Boolean:
+		{
+			outputJson["pinBooleanDataName"] = inputNodePin.pinBooleanDataName;
+			break;
+		}
+		case nodeEditorPinType_Compare:
+		{
+			outputJson["pinCompareDataName"] = inputNodePin.pinCompareDataName;
+			break;
+		}
+		case nodeEditorPinType_String:
+		{
+			outputJson["pinStringVar"] = inputNodePin.pinStringVar;
+			break;
+		}
+		case nodeEditorPinType_Integer:
+		{
+			outputJson["pinIntegerVar"] = inputNodePin.pinIntegerVar;
+			break;
+		}
+		case nodeEditorPinType_VariableType:
+		{
+			outputJson["pinVariableTypeName"] = inputNodePin.pinVariableTypeName;
+			break;
+		}
+	}
+}
+
+void from_json(const nlohmann::json& inputJson, nodeEditorNodePin& outputNodePin)
+{
+	if (inputJson.is_null())
+	{
+		return;
+	}
+	parseJSONToVar(inputJson, "parentNodeID", outputNodePin.parentNodeID);
+	parseJSONToVar(inputJson, "pinID", outputNodePin.pinID);
+	parseJSONToVar(inputJson, "pinName", outputNodePin.pinName);
+	outputNodePin.pinType = inputJson["pinType"];
+	outputNodePin.nodeLinks = inputJson["nodeLinks"];
+	outputNodePin.isInput = inputJson["isInput"];
+	switch (outputNodePin.pinType)
+	{
+		case nodeEditorPinType_Number:
+		{
+			if (!outputNodePin.isInput)
+			{
+				outputNodePin.pinNumberVar = inputJson["pinNumberVar"];
+			}
+			break;
+		}
+		case nodeEditorPinType_ProjectileData:
+		{
+			if (!outputNodePin.isInput)
+			{
+				parseJSONToVar(inputJson, "pinProjectileDataName", outputNodePin.pinProjectileDataName);
+			}
+			break;
+		}
+		case nodeEditorPinType_BuffData:
+		{
+			if (!outputNodePin.isInput)
+			{
+				parseJSONToVar(inputJson, "pinBuffDataName", outputNodePin.pinBuffDataName);
+			}
+			break;
+		}
+		case nodeEditorPinType_SoundData:
+		{
+			if (!outputNodePin.isInput)
+			{
+				parseJSONToVar(inputJson, "pinSoundDataName", outputNodePin.pinSoundDataName);
+			}
+			break;
+		}
+		case nodeEditorPinType_VariableName:
+		{
+			parseJSONToVar(inputJson, "pinVariableDataName", outputNodePin.pinVariableDataName);
+			if (outputNodePin.pinVariableDataName.compare("direction") == 0)
+			{
+				outputNodePin.variableDataType = pinVariableDataType_Direction;
+			}
+			else if (outputNodePin.pinVariableDataName.compare("creator") == 0)
+			{
+				outputNodePin.variableDataType = pinVariableDataType_Creator;
+			}
+			else if (outputNodePin.pinVariableDataName.compare("x") == 0)
+			{
+				outputNodePin.variableDataType = pinVariableDataType_X;
+			}
+			else if (outputNodePin.pinVariableDataName.compare("y") == 0)
+			{
+				outputNodePin.variableDataType = pinVariableDataType_Y;
+			}
+			else if (outputNodePin.pinVariableDataName.compare("Custom RValue") == 0)
+			{
+				outputNodePin.variableDataType = pinVariableDataType_CustomRValue;
+			}
+			break;
+		}
+		case nodeEditorPinType_Boolean:
+		{
+			parseJSONToVar(inputJson, "pinBooleanDataName", outputNodePin.pinBooleanDataName);
+			if (outputNodePin.pinBooleanDataName.compare("True") == 0)
+			{
+				outputNodePin.booleanDataType = pinBooleanDataType_True;
+			}
+			else if (outputNodePin.pinBooleanDataName.compare("False") == 0)
+			{
+				outputNodePin.booleanDataType = pinBooleanDataType_False;
+			}
+			break;
+		}
+		case nodeEditorPinType_Compare:
+		{
+			parseJSONToVar(inputJson, "pinCompareDataName", outputNodePin.pinCompareDataName);
+			if (outputNodePin.pinCompareDataName.compare("<") == 0)
+			{
+				outputNodePin.compareDataType = pinCompareDataType_Less;
+			}
+			else if (outputNodePin.pinCompareDataName.compare("<=") == 0)
+			{
+				outputNodePin.compareDataType = pinCompareDataType_LessOrEqual;
+			}
+			else if (outputNodePin.pinCompareDataName.compare("==") == 0)
+			{
+				outputNodePin.compareDataType = pinCompareDataType_Equal;
+			}
+			else if (outputNodePin.pinCompareDataName.compare(">") == 0)
+			{
+				outputNodePin.compareDataType = pinCompareDataType_Greater;
+			}
+			else if (outputNodePin.pinCompareDataName.compare(">=") == 0)
+			{
+				outputNodePin.compareDataType = pinCompareDataType_GreaterOrEqual;
+			}
+			else if (outputNodePin.pinCompareDataName.compare("!=") == 0)
+			{
+				outputNodePin.compareDataType = pinCompareDataType_NotEqual;
+			}
+			break;
+		}
+		case nodeEditorPinType_String:
+		{
+			parseJSONToVar(inputJson, "pinStringVar", outputNodePin.pinStringVar);
+			break;
+		}
+		case nodeEditorPinType_Integer:
+		{
+			parseJSONToVar(inputJson, "pinIntegerVar", outputNodePin.pinIntegerVar);
+			break;
+		}
+		case nodeEditorPinType_VariableType:
+		{
+			parseJSONToVar(inputJson, "pinVariableTypeName", outputNodePin.pinVariableTypeName);
+			break;
+		}
+	}
+}
+
+void to_json(nlohmann::json& outputJson, const nodeEditorNode& inputNode)
+{
+	ImVec2 nodePos;
+	if (inputNode.parentNodeEditor != nullptr && inputNode.parentNodeEditor->isEditorOpen)
+	{
+		ax::NodeEditor::SetCurrentEditor(inputNode.parentNodeEditor->editorContext);
+		nodePos = ax::NodeEditor::GetNodePosition(inputNode.nodeID); // TODO: Seems like this doesn't work if the window isn't actually open?
+		ax::NodeEditor::SetCurrentEditor(nullptr);
+	}
+	else
+	{
+		nodePos.x = static_cast<float>(inputNode.initPosX);
+		nodePos.y = static_cast<float>(inputNode.initPosY);
+	}
+	
+	outputJson = nlohmann::json{
+		{ "nodeID", inputNode.nodeID },
+		{ "nodeName", inputNode.nodeName },
+		{ "nodeType", inputNode.nodeType },
+		{ "inputPinIDArr", inputNode.inputPinIDArr },
+		{ "outputPinIDArr", inputNode.outputPinIDArr },
+		{ "nodePosX", nodePos.x },
+		{ "nodePosY", nodePos.y },
+	};
+}
+
+void from_json(const nlohmann::json& inputJson, nodeEditorNode& outputNode)
+{
+	if (inputJson.is_null())
+	{
+		return;
+	}
+	parseJSONToVar(inputJson, "nodeID", outputNode.nodeID);
+	parseJSONToVar(inputJson, "nodeName", outputNode.nodeName);
+	outputNode.nodeType = inputJson["nodeType"];
+	outputNode.setPinSpacing();
+	outputNode.setCanDelete();
+	auto& inputPinIDArr = inputJson["inputPinIDArr"];
+	if (inputPinIDArr.is_array())
+	{
+		outputNode.inputPinIDArr = inputPinIDArr.get<std::vector<int>>();
+	}
+	auto& outputPinIDArr = inputJson["outputPinIDArr"];
+	if (outputPinIDArr.is_array())
+	{
+		outputNode.outputPinIDArr = outputPinIDArr.get<std::vector<int>>();
+	}
+	auto& nodePosX = inputJson["nodePosX"];
+	auto& nodePosY = inputJson["nodePosY"];
+	// TODO: Seems like it might give default values if the editor was never initialized?
+	// TODO: Might also be crashing due to trying to set the node position before the editor is initialized? Could try to delay it
+	if (nodePosX.is_number() && nodePosY.is_number())
+	{
+		outputNode.initPosX = nodePosX;
+		outputNode.initPosY = nodePosY;
 	}
 }

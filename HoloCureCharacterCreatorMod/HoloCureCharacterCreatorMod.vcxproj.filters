@@ -57,6 +57,21 @@
     <ClCompile Include="include\imgui\imgui_impl_win32.cpp">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
+    <ClCompile Include="include\imgui_node_editor\crude_json.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui_node_editor\imgui_canvas.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui_node_editor\imgui_node_editor.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="include\imgui_node_editor\imgui_node_editor_api.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="source\CommonFunctions.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Aurie\shared.hpp">
@@ -134,5 +149,34 @@
     <ClInclude Include="include\stb_image\stb_image.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
+    <ClInclude Include="include\imgui_node_editor\crude_json.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_node_editor\imgui_bezier_math.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_node_editor\imgui_canvas.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_node_editor\imgui_extra_math.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_node_editor\imgui_node_editor.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+    <ClInclude Include="include\imgui_node_editor\imgui_node_editor_internal.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="include\imgui_node_editor\imgui_bezier_math.inl">
+      <Filter>Hlavičkové soubory</Filter>
+    </None>
+    <None Include="include\imgui_node_editor\imgui_extra_math.inl">
+      <Filter>Hlavičkové soubory</Filter>
+    </None>
+    <None Include="include\imgui_node_editor\imgui_node_editor_internal.inl">
+      <Filter>Hlavičkové soubory</Filter>
+    </None>
   </ItemGroup>
 </Project>
