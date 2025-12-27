@@ -17,9 +17,11 @@ Note: Currently doesn't work with my other mods since I am currently updating ho
     - In the `Native` folder, replace `AurieCore.dll`
 - Running the game either using the executable or through Steam should now launch the mods as well
 ## Creating a Character
-To create a character, you can use the mod GUI or directly edit the `charData.json` yourself. An example character has been provided in this repository named `char_test`.
+To create a character, you can use the mod GUI or directly edit the `charData.json` yourself. An example character has been provided in this repository named `char_YAGOO`.
 
-You will need a folder named `CharacterCreatorMod` in the directory `HoloCure.exe` is in. You can put the `char_test` folder in the `CharacterCreatorMod` directory, and the mod will automatically recognize it as long as the folder name starts with `char_`.
+You will need a folder named `CharacterCreatorMod` in the directory `HoloCure.exe` is in. You can put the `char_YAGOO` folder in the `CharacterCreatorMod` directory, and the mod will automatically recognize it as long as the folder name starts with `char_`.
+
+In order to learn how to use the node editor and what the different nodes do, please read the [wiki](https://github.com/PippleCultist/HoloCureCharacterCreatorMod/wiki)
 
 When including new images, you will need to put them in the character folder you made for the mod to automatically recognize them.
 
